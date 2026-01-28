@@ -218,13 +218,55 @@ document.addEventListener('DOMContentLoaded', () => {
     URL.revokeObjectURL(url);
   }
 
-  // Listen for messages from content script (e.g. from Select Mode)
+  // Listen for messages from content script
   chrome.runtime.onMessage.addListener((message) => {
     if (message.action === 'selectedText') {
-      // This usually won't trigger if popup is closed.
-      // But if we re-open popup, we might want to check storage?
-      // Currently we close popup on select.
-      // If we want to capture it, we'd need to store it in storage and load on init.
+      // Handle selection logic if needed
+    }
+  });
+
+  // ==========================================
+  // Custom Resizing Logic
+  // ==========================================
+  const resizeHandle = document.getElementById('resizeHandle');
+  let isResizing = false;
+
+  // Set initial size if stored
+  const savedSize = localStorage.getItem('popupSize');
+  if (savedSize) {
+    const { width, height } = JSON.parse(savedSize);
+    document.body.style.width = width + 'px';
+    document.body.style.height = height + 'px';
+  }
+
+  resizeHandle.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    e.preventDefault(); // Prevent text selection
+    document.body.classList.add('select-none'); // Disable selection during drag
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+
+    // Calculate new dimensions
+    // Minimum 400x300, Maximum 800x600 (Chrome limits)
+    const newWidth = Math.min(Math.max(e.clientX, 400), 795);
+    const newHeight = Math.min(Math.max(e.clientY, 300), 595);
+
+    document.body.style.width = newWidth + 'px';
+    document.body.style.height = newHeight + 'px';
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      document.body.classList.remove('select-none');
+
+      // Save preference
+      localStorage.setItem('popupSize', JSON.stringify({
+        width: parseInt(document.body.style.width),
+        height: parseInt(document.body.style.height)
+      }));
     }
   });
 });
