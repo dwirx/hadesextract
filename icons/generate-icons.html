@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate Icons</title>
+</head>
+<body>
+  <h1>Icon Generator</h1>
+  <p>Right-click each icon and "Save image as..." with the corresponding filename</p>
+  
+  <div style="display: flex; gap: 20px; align-items: end; margin-top: 20px;">
+    <div>
+      <canvas id="icon16" width="16" height="16"></canvas>
+      <p>icon16.png</p>
+    </div>
+    <div>
+      <canvas id="icon48" width="48" height="48"></canvas>
+      <p>icon48.png</p>
+    </div>
+    <div>
+      <canvas id="icon128" width="128" height="128"></canvas>
+      <p>icon128.png</p>
+    </div>
+  </div>
+
+  <script>
+    function drawIcon(canvasId, size) {
+      const canvas = document.getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+      
+      // Create gradient
+      const gradient = ctx.createLinearGradient(0, 0, size, size);
+      gradient.addColorStop(0, '#667eea');
+      gradient.addColorStop(1, '#764ba2');
+      
+      // Draw rounded rectangle
+      const radius = size * 0.2;
+      ctx.beginPath();
+      ctx.moveTo(radius, 0);
+      ctx.lineTo(size - radius, 0);
+      ctx.quadraticCurveTo(size, 0, size, radius);
+      ctx.lineTo(size, size - radius);
+      ctx.quadraticCurveTo(size, size, size - radius, size);
+      ctx.lineTo(radius, size);
+      ctx.quadraticCurveTo(0, size, 0, size - radius);
+      ctx.lineTo(0, radius);
+      ctx.quadraticCurveTo(0, 0, radius, 0);
+      ctx.closePath();
+      
+      ctx.fillStyle = gradient;
+      ctx.fill();
+      
+      // Draw "T" letter
+      ctx.fillStyle = 'white';
+      ctx.font = `bold ${size * 0.6}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('T', size / 2, size / 2 + size * 0.05);
+    }
+    
+    drawIcon('icon16', 16);
+    drawIcon('icon48', 48);
+    drawIcon('icon128', 128);
+  </script>
+</body>
+</html>

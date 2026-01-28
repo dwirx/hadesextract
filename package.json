@@ -1,0 +1,31 @@
+{
+  "name": "hadestext",
+  "version": "1.0.0",
+  "description": "A powerful Chrome extension to extract and format text from any website with smart content detection.",
+  "main": "index.js",
+  "directories": {
+    "lib": "lib"
+  },
+  "scripts": {
+    "build:css": "tailwindcss -i ./popup/input.css -o ./popup/popup.css --minify",
+    "build:js": "esbuild content/content.js --bundle --outfile=content/content.bundle.js --minify",
+    "build": "npm run build:css && npm run build:js",
+    "watch": "npm run build:css -- --watch & npm run build:js -- --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.18",
+    "autoprefixer": "^10.4.23",
+    "esbuild": "^0.27.2",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "dompurify": "^3.3.1",
+    "turndown": "^7.2.2"
+  }
+}
