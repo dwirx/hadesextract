@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const resultSection = document.getElementById('resultSection');
   const resultText = document.getElementById('resultText');
+  const resultDisplay = document.getElementById('resultDisplay');
 
   const statusEl = document.getElementById('status');
   const pageInfo = document.getElementById('pageInfo');
@@ -172,23 +173,33 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function displayResult(data) {
-    resultText.value = data.text;
-    resultSection.classList.remove('hidden');
-
-    // Stats
     const text = data.text;
-    const chars = text.length;
-    const words = text.trim() ? text.trim().split(/\s+/).length : 0;
-    const sentences = text.split(/[.!?]+/).filter(s => s.trim()).length;
 
-    charCount.textContent = chars.toLocaleString();
-    wordCount.textContent = words.toLocaleString();
-    sentenceCount.textContent = sentences.toLocaleString();
-    readingTime.textContent = Math.ceil(words / 200) + ' min';
+    // Fallback for copy
+    resultText.value = text;
+
+    // Update Rich Display
+    // We treat 'text' as raw text for now, but we can enhance if needed
+    resultDisplay.textContent = text;
+
+    // Update stats
+    const charCount = text.length;
+    const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+    const sentenceCount = text.trim() ? text.split(/[.!?]+/).length - 1 : 0;
+    const readingTime = Math.ceil(wordCount / 200);
+
+    document.getElementById('charCount').textContent = charCount.toLocaleString();
+    document.getElementById('wordCount').textContent = wordCount.toLocaleString();
+    document.getElementById('sentenceCount').textContent = sentenceCount.toLocaleString();
+    document.getElementById('readingTime').textContent = readingTime;
+
+    resultSection.classList.remove('hidden');
+    pageInfo.textContent = data.title || 'Ready';
   }
 
   function clearResult() {
     resultText.value = '';
+    resultDisplay.textContent = ''; // Clear display
     resultSection.classList.add('hidden');
     statusEl.classList.add('hidden');
   }
@@ -228,10 +239,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
   // Custom Resizing Logic
   // ==========================================
-  const resizeHandle = document.getElementById('resizeHandle');
+  // ==========================================
+  // Ultimate Resizing Logic (Omni-Directional)
+  // ==========================================
   let isResizing = false;
+  let currentResizeMode = null; // 'both', 'bottom', 'left', 'right'
 
-  // Set initial size if stored
+  // Set initial size
   const savedSize = localStorage.getItem('popupSize');
   if (savedSize) {
     const { width, height } = JSON.parse(savedSize);
@@ -239,30 +253,60 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.style.height = height + 'px';
   }
 
-  resizeHandle.addEventListener('mousedown', (e) => {
+  function startResize(e, mode) {
     isResizing = true;
-    e.preventDefault(); // Prevent text selection
-    document.body.classList.add('select-none'); // Disable selection during drag
-  });
+    currentResizeMode = mode;
+    e.preventDefault();
+    document.body.classList.add('select-none');
+  }
+
+  // Bind handles
+  document.getElementById('resizeHandle').addEventListener('mousedown', (e) => startResize(e, 'both'));
+  document.getElementById('resizeBottom').addEventListener('mousedown', (e) => startResize(e, 'bottom'));
+  document.getElementById('resizeLeft').addEventListener('mousedown', (e) => startResize(e, 'width'));
+  // 'resizeRight' is effectively same as handle but standard drag
+  document.getElementById('resizeRight')?.addEventListener('mousedown', (e) => startResize(e, 'width'));
 
   window.addEventListener('mousemove', (e) => {
     if (!isResizing) return;
 
     // Calculate new dimensions
-    // Minimum 400x300, Maximum 800x600 (Chrome limits)
-    const newWidth = Math.min(Math.max(e.clientX, 400), 795);
-    const newHeight = Math.min(Math.max(e.clientY, 300), 595);
+    // Minimum 400x300, Maximum is technically browser-limited (usually ~800x600 for popups)
+    // But we will allow dragging up to screen availability to let the browser enforce the hard limit.
+    const maxWidth = screen.availWidth;
+    const maxHeight = screen.availHeight;
+    const minWidth = 400;
+    const minHeight = 300;
 
-    document.body.style.width = newWidth + 'px';
-    document.body.style.height = newHeight + 'px';
+    // In Chrome popup, e.clientX is relative to the popup's viewport (0,0 is top-left).
+    // Since it's anchored Top-Right, resizing "width" effectively means dragging the left border?
+    // Actually standard popup is anchored Right. 
+    // So if we drag mouse to the right, clientX increases. Width should increase.
+    // BUT if we drag left edge, we want width to increase as x decreases?
+    // Chrome extension popups behave like normal windows: width extends to the right. 
+    // The "Left Resize" handle on a standard LTR layout is meaningless unless the window moves.
+    // BUT users asked for "omni directional".
+    // Let's assume standard behavior:
+    // Dragging Right Edge/Corner -> Increases Width.
+    // Dragging Bottom Edge -> Increases Height.
+
+    if (currentResizeMode === 'both' || currentResizeMode === 'width') {
+      const newWidth = Math.min(Math.max(e.clientX, minWidth), maxWidth);
+      document.body.style.width = newWidth + 'px';
+    }
+
+    if (currentResizeMode === 'both' || currentResizeMode === 'bottom') {
+      const newHeight = Math.min(Math.max(e.clientY, minHeight), maxHeight);
+      document.body.style.height = newHeight + 'px';
+    }
   });
 
   window.addEventListener('mouseup', () => {
     if (isResizing) {
       isResizing = false;
+      currentResizeMode = null;
       document.body.classList.remove('select-none');
 
-      // Save preference
       localStorage.setItem('popupSize', JSON.stringify({
         width: parseInt(document.body.style.width),
         height: parseInt(document.body.style.height)

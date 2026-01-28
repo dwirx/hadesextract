@@ -257,36 +257,53 @@
     </div>
 
     <!-- Result Text - Takes remaining space -->
-    <section id="resultSection" class="flex-1 flex flex-col min-h-0 hidden transition-all duration-300 ease-in-out">
-      <div
-        class="relative flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden group focus-within:ring-2 focus-within:ring-indigo-100 focus-within:border-indigo-400 transition-all flex flex-col">
-        <textarea id="resultText"
-          class="flex-1 w-full p-4 text-xs font-mono text-slate-600 bg-transparent border-none resize-none focus:ring-0 leading-relaxed custom-scrollbar outline-none"
-          readonly placeholder="Extracted content will appear here..."></textarea>
-
-        <!-- Floating Actions inside text area -->
-        <div
-          class="absolute bottom-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-          <!-- Indicators can go here -->
-        </div>
+    <section id="resultSection" class="flex-1 flex flex-col min-h-0 hidden transition-all duration-300      <!-- Content Area -->
+      <div class=" relative flex-1 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden group
+      focus-within:ring-2 focus-within:ring-indigo-100 focus-within:border-indigo-400 transition-all flex flex-col">
+      <!-- Rich Content Container -->
+      <div id="resultDisplay" contenteditable="true" spellcheck="false"
+        class="flex-1 w-full p-4 text-xs font-mono text-slate-700 bg-transparent outline-none overflow-y-auto custom-scrollbar leading-relaxed whitespace-pre-wrap break-words">
       </div>
-    </section>
 
-    <!-- Status -->
-    <div id="status"
-      class="hidden absolute top-4 right-4 z-50 shadow-lg p-3 rounded-xl text-xs font-medium flex items-center gap-2 animate-fade-in bg-white border border-slate-100">
-    </div>
+      <textarea id="resultText" class="hidden"></textarea> <!-- Hidden fallback for copy ops if needed, or remove -->
 
-    <!-- Footer -->
-    <footer
-      class="flex-none mt-4 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-      <div id="pageInfo" class="truncate max-w-[300px]">Ready</div>
-      <div>v3.0.0</div>
-    </footer>
+      <!-- Floating Actions inside area -->
+      <div
+        class="absolute bottom-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+        <!-- Indicators can go here -->
+      </div>
+  </div>
+  </section>
+
+  <!-- Status -->
+  <div id="status"
+    class="hidden absolute top-4 right-4 z-50 shadow-lg p-3 rounded-xl text-xs font-medium flex items-center gap-2 animate-fade-in bg-white border border-slate-100">
   </div>
 
-  <!-- Resize Handle -->
-  <div id="resizeHandle" class="fixed bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-50 group">
+  <!-- Footer -->
+  <footer
+    class="flex-none mt-4 pt-2 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
+    <div id="pageInfo" class="truncate max-w-[300px]">Ready</div>
+    <div>v3.0.0</div>
+  </footer>
+  </div>
+
+  <!-- Resize Handles -->
+  <!-- Bottom Resize (Height) -->
+  <div id="resizeBottom"
+    class="fixed bottom-0 left-0 right-0 h-1.5 cursor-ns-resize z-40 hover:bg-indigo-500/30 transition-colors"></div>
+
+  <!-- Right Resize (Width) - actually expands left in RTL but here it expands width -->
+  <div id="resizeRight"
+    class="fixed top-0 bottom-0 right-0 w-1.5 cursor-ew-resize z-40 hover:bg-indigo-500/30 transition-colors"></div>
+
+  <!-- Left Resize (Width) -->
+  <div id="resizeLeft"
+    class="fixed top-0 bottom-0 left-0 w-1.5 cursor-ew-resize z-40 hover:bg-indigo-500/30 transition-colors"></div>
+
+  <!-- Corner Resize (Both) -->
+  <div id="resizeHandle"
+    class="fixed bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-50 group flex items-end justify-end p-0.5">
     <svg class="w-full h-full text-slate-300 group-hover:text-indigo-500 transition-colors" viewBox="0 0 24 24"
       fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 15v6h-6"></path>
