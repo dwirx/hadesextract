@@ -103,7 +103,19 @@ function convertToFormat(article, format, options = {}) {
   if (format === 'markdown') {
     const turndownService = new TurndownService({
       headingStyle: 'atx',
-      codeBlockStyle: 'fenced'
+      codeBlockStyle: 'fenced',
+      bulletListMarker: '-',
+      hr: '---'
+    });
+
+    // Remove empty links
+    turndownService.addRule('removeEmptyLinks', {
+      filter: function (node) {
+        return node.nodeName === 'A' && !node.getAttribute('href');
+      },
+      replacement: function (content) {
+        return content;
+      }
     });
 
     // Add cleaner title header
@@ -296,14 +308,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         let article;
 
         if (request.articleOnly) {
+          // Article Mode: Strict Readability
+          // We can pass options to Readability if needed to be stricter
           article = getArticle(docClone);
         } else {
-          // Full page - we can still use Readability but maybe with less strictness?
-          // Or just standard Readability. 
-          // If the user wants "Full Page", maybe they mean the innerHTML converted to MD.
-          // Readability strips navigation.
-          // For 'Full Page', let's use Turndown on the body directly.
+          // Full Page Mode:
+          // If users want "Full Page", they usually want the visual content but cleaned up.
+          // Turndown directly on body can be messy.
+          // Let's stick to Readability but with a custom "cleaning" pass if Readability fails?
+          // Actually, Readability is best for "Main Content". 
+          // If user wants EVERYTHING, we should just use body.innerHTML but run it through DOMPurify + Turndown.
+
           if (request.mode === 'full') {
+            // For full page, we define "article" as the whole body wrapper
             article = {
               title: document.title,
               content: document.body.innerHTML,
@@ -315,7 +332,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
         }
 
-        // If Readability fails or returns null (empty page)
+        // If Readability fails or returns null (empty page), fallback to body
         if (!article) {
           article = {
             title: document.title,

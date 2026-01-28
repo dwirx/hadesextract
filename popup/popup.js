@@ -129,13 +129,16 @@ document.addEventListener('DOMContentLoaded', () => {
       if (err.message.includes('Receiving end does not exist') ||
         err.message.includes('Could not establish connection')) {
 
-        showStatus('Injecting script...', 'text-indigo-600 bg-indigo-50');
+        showStatus('Connecting to page...', 'text-indigo-600 bg-indigo-50');
 
         try {
           await chrome.scripting.executeScript({
             target: { tabId: tab.id },
             files: ['content/content.bundle.js']
           });
+
+          // Wait a moment for the script to initialize
+          await new Promise(resolve => setTimeout(resolve, 300));
 
           // Retry extraction
           const response = await chrome.tabs.sendMessage(tab.id, {
@@ -155,7 +158,12 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         } catch (injectErr) {
           console.error('Injection failed:', injectErr);
-          showStatus('Error: Please refresh the page.', 'text-red-600 bg-red-50');
+          // If second attempt fails, it might be a restricted page (e.g. chrome://)
+          if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) {
+            showStatus('Cannot extract from browser pages.', 'text-red-600 bg-red-50');
+          } else {
+            showStatus('Please refresh the page and try again.', 'text-amber-600 bg-amber-50');
+          }
         }
       } else {
         showStatus('Error: ' + err.message, 'text-red-600 bg-red-50');
@@ -210,11 +218,21 @@ document.addEventListener('DOMContentLoaded', () => {
     statusEl.classList.remove('hidden');
   }
 
-  function copyToClipboard() {
-    resultText.select();
-    document.execCommand('copy');
-    showStatus('Copied to clipboard!', 'text-emerald-600 bg-emerald-50');
-    setTimeout(() => statusEl.classList.add('hidden'), 2000);
+  async function copyToClipboard() {
+    if (!currentData || !currentData.text) return;
+
+    try {
+      await navigator.clipboard.writeText(currentData.text);
+      showStatus('Copied to clipboard!', 'text-emerald-600 bg-emerald-50');
+      setTimeout(() => statusEl.classList.add('hidden'), 2000);
+    } catch (err) {
+      console.error('Copy failed:', err);
+      // Fallback
+      resultText.value = currentData.text;
+      resultText.select();
+      document.execCommand('copy');
+      showStatus('Copied (fallback)!', 'text-amber-600 bg-amber-50');
+    }
   }
 
   function downloadResult(ext) {
