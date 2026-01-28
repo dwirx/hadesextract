@@ -3,8 +3,8 @@ node_modules/
 package-lock.json
 
 # Build outputs
-content/content.bundle.js
-popup/popup.css
+# content/content.bundle.js
+# popup/popup.css
 
 # OS files
 .DS_Store
