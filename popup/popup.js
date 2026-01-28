@@ -195,9 +195,45 @@ document.addEventListener('DOMContentLoaded', () => {
     return document.querySelector('input[name="format"]:checked').value;
   }
 
+  async function ensureConnection(tabId) {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, { action: 'PING' });
+      if (response && response.status === 'alive') return true;
+    } catch (e) {
+      // Ignore error, just means we need to inject
+    }
+
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tabId },
+        files: ['content/content.bundle.js']
+      });
+      // Wait for script to initialize
+      await new Promise(r => setTimeout(r, 600));
+      return true;
+    } catch (e) {
+      console.error('Injection failed:', e);
+      return false;
+    }
+  }
+
   async function extract(mode, articleOnly = false) {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return;
+
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) {
+      showStatus('Cannot extract from browser pages.', 'text-red-600 bg-red-50');
+      return;
+    }
+
+    showStatus('Connecting...', 'text-indigo-600 bg-indigo-50');
+
+    // Ensure connection first (silent retry)
+    const isConnected = await ensureConnection(tab.id);
+    if (!isConnected) {
+      showStatus('Connection failed. Please refresh.', 'text-red-600 bg-red-50');
+      return;
+    }
 
     showStatus('Extracting...', 'text-indigo-600 bg-indigo-50');
 
@@ -229,50 +265,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.error(err);
-
-      // If content script is not loaded, try to inject it
-      if (err.message.includes('Receiving end does not exist') ||
-        err.message.includes('Could not establish connection')) {
-
-        showStatus('Connecting to page...', 'text-indigo-600 bg-indigo-50');
-
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId: tab.id },
-            files: ['content/content.bundle.js']
-          });
-
-          // Wait a moment for the script to initialize
-          await new Promise(resolve => setTimeout(resolve, 300));
-
-          // Retry extraction
-          const response = await chrome.tabs.sendMessage(tab.id, {
-            action: 'extract',
-            mode: mode,
-            articleOnly: articleOnly,
-            format: getFormat(),
-            options: getOptions()
-          });
-
-          if (response && response.success) {
-            currentData = response.data;
-            displayResult(currentData);
-            showStatus('Success!', 'text-emerald-600 bg-emerald-50');
-            setTimeout(() => statusEl.classList.add('hidden'), 2000);
-            return;
-          }
-        } catch (injectErr) {
-          console.error('Injection failed:', injectErr);
-          // If second attempt fails, it might be a restricted page (e.g. chrome://)
-          if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) {
-            showStatus('Cannot extract from browser pages.', 'text-red-600 bg-red-50');
-          } else {
-            showStatus('Please refresh the page and try again.', 'text-amber-600 bg-amber-50');
-          }
-        }
-      } else {
-        showStatus('Error: ' + err.message, 'text-red-600 bg-red-50');
-      }
+      showStatus('Error: ' + err.message, 'text-red-600 bg-red-50');
     }
   }
 
@@ -280,7 +273,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab) return;
 
+    if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) {
+      alert('Cannot select on browser pages.');
+      return;
+    }
+
     window.close(); // Close popup to let user select
+
+    const isConnected = await ensureConnection(tab.id);
+    if (!isConnected) {
+      alert('Could not connect to page. Please refresh.');
+      return;
+    }
 
     chrome.tabs.sendMessage(tab.id, { action: 'enableSelectMode' });
   }

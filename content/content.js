@@ -100,13 +100,16 @@ function convertToFormat(article, format, options = {}) {
     html: content
   };
 
-  if (format === 'markdown') {
+  if (format === 'markdown' || format === 'obsidian') {
     const turndownService = new TurndownService({
       headingStyle: 'atx',
       codeBlockStyle: 'fenced',
       bulletListMarker: '-',
       hr: '---'
     });
+
+    // Github Flavored Markdown (Tables, Task Lists, etc.) support would be ideal here if we had the plugin
+    // But basic Turndown handles standard tables reasonably well interactively.
 
     // Remove empty links
     turndownService.addRule('removeEmptyLinks', {
@@ -118,10 +121,33 @@ function convertToFormat(article, format, options = {}) {
       }
     });
 
-    // Add cleaner title header
-    let mdOutput = `# ${title}\n\n`;
-    mdOutput += `**Source:** [${window.location.href}](${window.location.href})\n\n`;
-    mdOutput += `---\n\n`;
+    let mdOutput = '';
+
+    if (format === 'obsidian') {
+      // Obsidian-Ready Output
+      // 1. YAML Frontmatter
+      const dateStr = new Date().toISOString().split('T')[0];
+      mdOutput += `---
+title: "${title.replace(/"/g, '\\"')}"
+source: "${window.location.href}"
+date: ${dateStr}
+tags: [read-later, web-clip]
+---
+
+`;
+      // 2. Obsidian Callout for Source/Metadata
+      mdOutput += `> [!info] Data
+> **Title**: ${title}
+> **Source**: [${window.location.host}](${window.location.href})
+> **Clipped**: ${new Date().toLocaleString()}
+
+`;
+    } else {
+      // Standard Markdown Header
+      mdOutput = `# ${title}\n\n`;
+      mdOutput += `**Source:** [${window.location.href}](${window.location.href})\n\n`;
+      mdOutput += `---\n\n`;
+    }
 
     if (options.preserveStructure === false) {
       turndownService.addRule('noHeadings', {
@@ -132,9 +158,21 @@ function convertToFormat(article, format, options = {}) {
       });
     }
 
+    // Better Image Handling for Obsidian (Standard Markdown images work fine)
+    // But we might want to ensure they are on their own lines
+    turndownService.addRule('images', {
+      filter: 'img',
+      replacement: function (content, node) {
+        const alt = node.alt || '';
+        const src = node.getAttribute('src') || '';
+        if (!src) return '';
+        // Add extra newlines for spacing
+        return `\n\n![${alt}](${src})\n\n`;
+      }
+    });
+
     mdOutput += turndownService.turndown(content);
 
-    // Append stats or footer if logical? No, keep it clean.
     result.text = mdOutput;
 
   } else if (format === 'structured') {
