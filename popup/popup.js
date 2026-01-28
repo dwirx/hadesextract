@@ -1,3 +1,5 @@
+import { db } from './utils/index.js';
+
 document.addEventListener('DOMContentLoaded', () => {
   // Elements
   const extractAllBtn = document.getElementById('extractAll');
@@ -7,6 +9,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const resultSection = document.getElementById('resultSection');
   const resultText = document.getElementById('resultText');
   const resultDisplay = document.getElementById('resultDisplay');
+
+  // View Toggle & History
+  const viewExtractorBtn = document.getElementById('viewExtractorBtn');
+  const viewHistoryBtn = document.getElementById('viewHistoryBtn');
+  const historySection = document.getElementById('historySection');
+  const historyList = document.getElementById('historyList');
+  const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+
+  // Extractor Controls Container (to hide when showing history)
+  const controlsContainer = document.querySelector('.flex-none.flex.flex-col.gap-3');
+
 
   const statusEl = document.getElementById('status');
   const pageInfo = document.getElementById('pageInfo');
@@ -55,17 +68,100 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Options Listeners (Re-extract on format change?)
-  // Maybe just reformat if we have data? 
-  // If we change format (e.g. MD to HTML), we might need to re-request from content script 
-  // because content script does the conversion (Turndown).
-  // Yes, format change requires re-extraction or we should ask content script specifically.
-  // Actually, better UX: if we have `currentData` (which matches format), and user changes format,
-  // we need to ask content script to convert again the same article?
-  // Since we don't store the article in Popup, we re-run extract.
-  // But that might re-parse the page. 
-  // For now, let's keep it simple: User clicks Extract again if they change format.
-  // OR: If result is shown, trigger extract again on format change.
+  // View Switching
+  viewExtractorBtn.addEventListener('click', () => switchView('extractor'));
+  viewHistoryBtn.addEventListener('click', () => switchView('history'));
+
+  clearHistoryBtn.addEventListener('click', async () => {
+    if (confirm('Delete all history?')) {
+      await db.clear();
+      renderHistory();
+    }
+  });
+
+  async function switchView(view) {
+    if (view === 'extractor') {
+      historySection.classList.add('hidden');
+      controlsContainer.classList.remove('hidden');
+      if (currentData) resultSection.classList.remove('hidden');
+
+      viewExtractorBtn.classList.replace('text-slate-500', 'text-slate-700');
+      viewExtractorBtn.classList.replace('font-medium', 'font-bold');
+      viewExtractorBtn.classList.add('bg-white', 'shadow-sm');
+
+      viewHistoryBtn.classList.replace('text-slate-700', 'text-slate-500');
+      viewHistoryBtn.classList.replace('font-bold', 'font-medium');
+      viewHistoryBtn.classList.remove('bg-white', 'shadow-sm');
+    } else {
+      controlsContainer.classList.add('hidden');
+      resultSection.classList.add('hidden');
+      historySection.classList.remove('hidden');
+
+      viewHistoryBtn.classList.replace('text-slate-500', 'text-slate-700');
+      viewHistoryBtn.classList.replace('font-medium', 'font-bold');
+      viewHistoryBtn.classList.add('bg-white', 'shadow-sm');
+
+      viewExtractorBtn.classList.replace('text-slate-700', 'text-slate-500');
+      viewExtractorBtn.classList.replace('font-bold', 'font-medium');
+      viewExtractorBtn.classList.remove('bg-white', 'shadow-sm');
+
+      await renderHistory();
+    }
+  }
+
+  async function renderHistory() {
+    const items = await db.getAll();
+    historyList.innerHTML = '';
+
+    if (items.length === 0) {
+      historyList.innerHTML = `
+            <div class="flex flex-col items-center justify-center h-full text-slate-300 gap-2 mt-10">
+                <svg class="w-8 h-8 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path></svg>
+                <div class="text-xs font-medium">No history yet</div>
+            </div>`;
+      return;
+    }
+
+    items.forEach(item => {
+      const el = document.createElement('div');
+      el.className = 'group flex flex-col p-3 bg-white border border-slate-100 rounded-xl shadow-sm hover:border-indigo-200 hover:shadow-md transition-all cursor-pointer';
+      el.innerHTML = `
+             <div class="flex items-start justify-between mb-1">
+                 <h3 class="font-bold text-xs text-slate-700 line-clamp-1 break-all">${item.title || 'Untitled'}</h3>
+                 <span class="text-[9px] text-slate-400 whitespace-nowrap ml-2">${new Date(item.createdAt).toLocaleDateString()}</span>
+             </div>
+             <p class="text-[10px] text-slate-500 line-clamp-2 mb-2 font-mono bg-slate-50 p-1.5 rounded-md border border-slate-100/50">${item.text.substring(0, 150)}</p>
+             <div class="flex items-center justify-between mt-auto">
+                 <span class="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-wider">${item.format || 'TXT'}</span>
+                 <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                     <button class="delete-btn p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" title="Delete">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                     </button>
+                 </div>
+             </div>
+          `;
+
+      // Load Click
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.delete-btn')) return;
+        currentData = item;
+        displayResult(item);
+        switchView('extractor');
+      });
+
+      // Delete Click
+      el.querySelector('.delete-btn').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await db.delete(item.id);
+        renderHistory();
+      });
+
+      historyList.appendChild(el);
+    });
+  }
+
+  // Button Listeners
+  // Removed old comment: Options Listeners (Re-extract on format change?)
 
   const formatInputs = document.querySelectorAll('input[name="format"]');
   formatInputs.forEach(input => {
@@ -116,6 +212,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (response && response.success) {
         currentData = response.data; // { title, text, html, url }
+
+        // Auto-save to History
+        db.add({
+          title: currentData.title,
+          text: currentData.text,
+          url: currentData.url || '',
+          format: getFormat()
+        }).catch(err => console.error('Failed to save history:', err));
+
         displayResult(currentData);
         showStatus('Success!', 'text-emerald-600 bg-emerald-50');
         setTimeout(() => statusEl.classList.add('hidden'), 2000);

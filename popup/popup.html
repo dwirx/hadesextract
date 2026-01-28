@@ -43,6 +43,17 @@
         <p class="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Professional Tool</p>
       </div>
       <div class="ml-auto flex items-center gap-2">
+        <!-- View Toggle -->
+        <nav class="flex p-0.5 bg-slate-100 rounded-lg">
+          <button id="viewExtractorBtn"
+            class="px-2 py-1 rounded-md text-[10px] font-bold text-slate-700 bg-white shadow-sm transition-all">
+            Extractor
+          </button>
+          <button id="viewHistoryBtn"
+            class="px-2 py-1 rounded-md text-[10px] font-medium text-slate-500 hover:text-slate-900 transition-all">
+            History
+          </button>
+        </nav>
         <!-- Status Indicator dot -->
         <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]"></div>
       </div>
@@ -244,6 +255,29 @@
       </div>
     </section>
 
+    <!-- History View Container -->
+    <section id="historySection" class="flex-1 flex flex-col min-h-0 hidden">
+      <!-- History Toolbar -->
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Saved Extractions</span>
+        <button id="clearHistoryBtn"
+          class="text-[10px] font-semibold text-red-500 hover:text-red-700 hover:underline transition-all">
+          Clear All
+        </button>
+      </div>
+
+      <!-- History List -->
+      <div id="historyList" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2 p-1">
+        <!-- Empty State -->
+        <div class="flex flex-col items-center justify-center h-full text-slate-300 gap-2">
+          <svg class="w-8 h-8 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"></path>
+          </svg>
+          <div class="text-xs font-medium">No history yet</div>
+        </div>
+      </div>
+    </section>
+
     <!-- Status Toast -->
     <div id="status"
       class="hidden absolute top-4 right-4 z-50 shadow-lg p-3 rounded-xl text-xs font-medium flex items-center gap-2 animate-fade-in bg-white border border-slate-100">
@@ -283,7 +317,7 @@
     </svg>
   </div>
 
-  <script src="popup.js"></script>
+  <script src="popup.js" type="module"></script>
 </body>
 
 </html>
