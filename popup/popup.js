@@ -38,15 +38,53 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentData = null;
 
   // Initialize
-  checkCurrentTab();
+  (async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab) return;
 
-  chrome.storage.local.get(['lastExtractedData'], (result) => {
-    if (currentData) {
-      displayResult(currentData);
-      // Ensure local storage is in sync
-      chrome.storage.local.set({ lastExtractedData: currentData });
+    pageInfo.textContent = tab.title || 'Ready';
+
+    // 1. Get global last extracted data
+    const storage = await chrome.storage.local.get(['lastExtractedData']);
+    let candidate = null;
+    let source = null;
+
+    if (storage.lastExtractedData && storage.lastExtractedData.url === tab.url) {
+      candidate = storage.lastExtractedData;
+      source = 'storage';
     }
-  });
+
+    // 2. If no fresh storage data for this tab, check history
+    if (!candidate) {
+      const historyItems = await db.getAll();
+      // Find newest item for this URL
+      candidate = historyItems.find(item => item.url === tab.url);
+      source = 'history';
+    }
+
+    if (candidate) {
+      currentData = candidate;
+      displayResult(currentData);
+
+      // If it came from storage (e.g. context menu) and NOT history,
+      // save it to history so it persists
+      if (source === 'storage') {
+         const historyItems = await db.getAll();
+         const mostRecent = historyItems[0];
+         // Basic duplicate check
+         const isDuplicate = mostRecent && mostRecent.url === candidate.url && mostRecent.text === candidate.text;
+
+         if (!isDuplicate) {
+             db.add({
+              title: candidate.title,
+              text: candidate.text,
+              url: candidate.url || '',
+              format: 'txt'
+            }).catch(console.error);
+         }
+      }
+    }
+  })();
 
   // Button Listeners
   extractAllBtn.addEventListener('click', () => extract('full'));
