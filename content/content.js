@@ -9,7 +9,6 @@ import DOMPurify from 'dompurify';
 
 let isSelectMode = false;
 let hoveredElement = null;
-let options = {};
 
 // ============================================
 // UI Utilities
@@ -53,9 +52,52 @@ function highlightElement(element) {
 // Extraction Logic
 // ============================================
 
+function cleanDOM(doc) {
+  // 1. Remove rigid noise tags that Readability might miss or that leak content
+  const noiseTags = ['script', 'style', 'noscript', 'iframe', 'svg', 'link', 'object', 'embed', 'template', 'form', 'input', 'button'];
+  noiseTags.forEach(tag => {
+    doc.querySelectorAll(tag).forEach(el => el.remove());
+  });
+
+  // 2. Fix Lazy Loaded Images
+  // Many sites use data-src and have a transparent spacer as src
+  doc.querySelectorAll('img').forEach(img => {
+    if (img.dataset.src && (!img.src || img.src.startsWith('data:'))) {
+      img.src = img.dataset.src;
+    }
+    if (img.dataset.srcset) {
+      img.srcset = img.dataset.srcset;
+    }
+    // Remove tiny tracking pixels
+    if (img.width === 1 && img.height === 1) {
+      img.remove();
+    }
+  });
+}
+
+function postProcessText(text) {
+  if (!text) return '';
+  return text
+    // Remove CSS artifacts like :root { ... }
+    .replace(/:root\s*\{[\s\S]*?\}/gi, '')
+    // Remove @font-face or @media blocks that might leak
+    .replace(/@font-face\s*\{[\s\S]*?\}/gi, '')
+    .replace(/@media\s*[\s\S]*?\{[\s\S]*?\}/gi, '')
+    // Remove common "Read more" links
+    .replace(/^Read more.*$/gim, '')
+    .replace(/^Share this.*$/gim, '')
+    // Fix multiple newlines
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function getArticle(docClone) {
   try {
-    const reader = new Readability(docClone);
+    cleanDOM(docClone); // Clean before parsing
+    const reader = new Readability(docClone, {
+      charThreshold: 20,
+      nbTopCandidates: 5
+    });
     return reader.parse();
   } catch (e) {
     console.error("Readability failed", e);
@@ -68,6 +110,7 @@ function convertToFormat(article, format, options = {}) {
 
   let content = article.content; // HTML
   const title = article.title;
+  const collectedImages = []; // Store images for the gallery
 
   // Clean using DOMPurify
   content = DOMPurify.sanitize(content);
@@ -108,9 +151,6 @@ function convertToFormat(article, format, options = {}) {
       hr: '---'
     });
 
-    // Github Flavored Markdown (Tables, Task Lists, etc.) support would be ideal here if we had the plugin
-    // But basic Turndown handles standard tables reasonably well interactively.
-
     // Remove empty links
     turndownService.addRule('removeEmptyLinks', {
       filter: function (node) {
@@ -121,11 +161,30 @@ function convertToFormat(article, format, options = {}) {
       }
     });
 
+    // Smart Image Handling: Inline + Collection
+    turndownService.addRule('images', {
+      filter: 'img',
+      replacement: function (content, node) {
+        const alt = node.alt || '';
+        let src = node.getAttribute('src') || node.dataset.src || '';
+
+        // Resolve relative URLs
+        try {
+          src = new URL(src, window.location.href).href;
+        } catch (e) {}
+
+        if (!src || src.startsWith('data:')) return ''; // Skip base64 noise
+
+        collectedImages.push({ alt, src });
+
+        // Add extra newlines for spacing
+        return `\n\n![${alt}](${src})\n\n`;
+      }
+    });
+
     let mdOutput = '';
 
     if (format === 'obsidian') {
-      // Obsidian-Ready Output
-      // 1. YAML Frontmatter
       const dateStr = new Date().toISOString().split('T')[0];
       mdOutput += `---
 title: "${title.replace(/"/g, '\\"')}"
@@ -134,16 +193,13 @@ date: ${dateStr}
 tags: [read-later, web-clip]
 ---
 
-`;
-      // 2. Obsidian Callout for Source/Metadata
-      mdOutput += `> [!info] Data
+> [!info] Data
 > **Title**: ${title}
 > **Source**: [${window.location.host}](${window.location.href})
 > **Clipped**: ${new Date().toLocaleString()}
 
 `;
     } else {
-      // Standard Markdown Header
       mdOutput = `# ${title}\n\n`;
       mdOutput += `**Source:** [${window.location.href}](${window.location.href})\n\n`;
       mdOutput += `---\n\n`;
@@ -158,44 +214,35 @@ tags: [read-later, web-clip]
       });
     }
 
-    // Better Image Handling for Obsidian (Standard Markdown images work fine)
-    // But we might want to ensure they are on their own lines
-    turndownService.addRule('images', {
-      filter: 'img',
-      replacement: function (content, node) {
-        const alt = node.alt || '';
-        const src = node.getAttribute('src') || '';
-        if (!src) return '';
-        // Add extra newlines for spacing
-        return `\n\n![${alt}](${src})\n\n`;
-      }
-    });
-
     mdOutput += turndownService.turndown(content);
 
-    result.text = mdOutput;
+    // Append Image Gallery if any images found
+    if (collectedImages.length > 0 && options.includeImages) {
+      mdOutput += `\n\n---\n### Image Gallery\n\n`;
+      collectedImages.forEach((img, idx) => {
+        mdOutput += `${idx+1}. **${img.alt || 'Image'}**\n   ${img.src}\n`;
+      });
+    }
+
+    result.text = postProcessText(mdOutput);
 
   } else if (format === 'structured') {
-    // Clean Professional Structured Format
+    // ... (Keep existing structured logic but add postProcessText)
     let output = '';
-
-    // 1. Header Section
+    // ... (existing header) ...
     output += `================================================================================\n`;
     output += `TITLE: ${title}\n`;
     output += `SOURCE: ${window.location.href}\n`;
     output += `DATE: ${new Date().toLocaleString()}\n`;
     output += `================================================================================\n\n`;
 
-    // 2. Content Section
-    // Use Turndown but configured for "Structured Text" (minimal markdown)
     const turndownService = new TurndownService({
       headingStyle: 'atx',
       codeBlockStyle: 'fenced',
       bulletListMarker: '•',
-      emDelimiter: '' // Remove italics markers
+      emDelimiter: ''
     });
 
-    // Simplify headers for structured view
     turndownService.addRule('headers', {
       filter: ['h1', 'h2', 'h3'],
       replacement: function (content) {
@@ -203,28 +250,31 @@ tags: [read-later, web-clip]
       }
     });
 
-    // Remove links in text for structured view (keep text only)
-    // We will list them at the bottom
     if (options.includeLinks) {
       turndownService.addRule('links', {
         filter: 'a',
         replacement: function (content, node) {
-          return content; // Just return text, no []() syntax
+          return content;
         }
       });
     }
 
-    // Remove image syntax in text (images listed below)
+    // Capture images for list but remove from text
     turndownService.addRule('images', {
       filter: 'img',
-      replacement: function () { return ''; }
+      replacement: function (content, node) {
+        const src = node.getAttribute('src') || node.dataset.src;
+        if (src && !src.startsWith('data:')) {
+           collectedImages.push({ alt: node.alt, src: src });
+        }
+        return '';
+      }
     });
 
     output += turndownService.turndown(content).trim();
 
-    // 3. Appendices (Links & Images)
-
-    // Links
+    // Appendices (Links & Images)
+    // Links (existing logic)
     if (options.includeLinks) {
       const links = [];
       tempDiv.querySelectorAll('a').forEach(a => {
@@ -232,7 +282,6 @@ tags: [read-later, web-clip]
           links.push({ text: a.textContent.trim(), url: a.href });
         }
       });
-
       if (links.length > 0) {
         output += '\n\n\n--------------------------------------------------------------------------------\n';
         output += 'LINKS REFERENCED\n';
@@ -243,31 +292,23 @@ tags: [read-later, web-clip]
       }
     }
 
-    // Images
-    if (options.includeImages) {
-      const images = [];
-      tempDiv.querySelectorAll('img').forEach(img => {
-        const src = img.src || img.dataset.src;
-        if (src) images.push({ alt: img.alt, src: src });
-      });
-
-      if (images.length > 0) {
+    // Images (from collectedImages)
+    if (collectedImages.length > 0 && options.includeImages) {
         output += '\n\n--------------------------------------------------------------------------------\n';
         output += 'IMAGES\n';
         output += '--------------------------------------------------------------------------------\n';
-        images.forEach((img, i) => {
+        collectedImages.forEach((img, i) => {
           output += `[${i + 1}] ${img.alt || 'Image'}\n    ${img.src}\n`;
         });
-      }
     }
 
-    result.text = output;
+    result.text = postProcessText(output);
 
   } else {
     // HTML
-    result.text = tempDiv.textContent;
+    result.text = tempDiv.textContent; // Fallback text
     if (format === 'html') {
-      result.text = content;
+      result.text = content; // Raw HTML (already cleaned by DOMPurify)
     }
   }
 
@@ -333,7 +374,7 @@ function disableSelectMode() {
 // Message Listener
 // ============================================
 
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   if (request.action === 'PING') {
     sendResponse({ status: 'alive' });
     return true;
