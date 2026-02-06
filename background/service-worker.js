@@ -12,40 +12,42 @@ let lastExtractedData = null;
 
 chrome.runtime.onInstalled.addListener(() => {
   // Create context menu items
-  chrome.contextMenus.create({
-    id: 'extractSelection',
-    title: '📋 Extract Selected Text',
-    contexts: ['selection']
-  });
-  
-  chrome.contextMenus.create({
-    id: 'extractPage',
-    title: '📄 Extract Full Page',
-    contexts: ['page']
-  });
-  
-  chrome.contextMenus.create({
-    id: 'extractElement',
-    title: '🎯 Select Element to Extract',
-    contexts: ['page']
-  });
-  
-  chrome.contextMenus.create({
-    id: 'separator1',
-    type: 'separator',
-    contexts: ['page', 'selection']
-  });
-  
-  chrome.contextMenus.create({
-    id: 'copyAsMarkdown',
-    title: '📝 Copy as Markdown',
-    contexts: ['selection']
-  });
-  
-  chrome.contextMenus.create({
-    id: 'copyAsPlain',
-    title: '📃 Copy as Plain Text',
-    contexts: ['selection']
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({
+      id: 'extractSelection',
+      title: '📋 Extract Selected Text',
+      contexts: ['selection']
+    });
+
+    chrome.contextMenus.create({
+      id: 'extractPage',
+      title: '📄 Extract Full Page',
+      contexts: ['page']
+    });
+
+    chrome.contextMenus.create({
+      id: 'extractElement',
+      title: '🎯 Select Element to Extract',
+      contexts: ['page']
+    });
+
+    chrome.contextMenus.create({
+      id: 'separator1',
+      type: 'separator',
+      contexts: ['page', 'selection']
+    });
+
+    chrome.contextMenus.create({
+      id: 'copyAsMarkdown',
+      title: '📝 Copy as Markdown',
+      contexts: ['selection']
+    });
+
+    chrome.contextMenus.create({
+      id: 'copyAsPlain',
+      title: '📃 Copy as Plain Text',
+      contexts: ['selection']
+    });
   });
 });
 
@@ -345,7 +347,7 @@ function extractPageContent() {
 // Message Handlers
 // ============================================
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   switch (message.action) {
     case 'selectedText':
       lastExtractedData = message.data;

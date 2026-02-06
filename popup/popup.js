@@ -41,11 +41,10 @@ document.addEventListener('DOMContentLoaded', () => {
   checkCurrentTab();
 
   chrome.storage.local.get(['lastExtractedData'], (result) => {
-    if (result.lastExtractedData) {
-      currentData = result.lastExtractedData;
+    if (currentData) {
       displayResult(currentData);
-      // Clear it so it doesn't persist across sessions if unwanted? 
-      // Better to keep it until replaced.
+      // Ensure local storage is in sync
+      chrome.storage.local.set({ lastExtractedData: currentData });
     }
   });
 
@@ -60,13 +59,18 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   clearBtn.addEventListener('click', clearResult);
 
-  // Download handlers
-  document.querySelectorAll('[data-format]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const format = e.target.dataset.format;
+  // Fix: Attach download listener explicitly to the main download button
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', () => {
+      const format = getFormat() || 'txt';
       downloadResult(format);
     });
-  });
+  }
+
+  // Helper to sanitize filenames
+  function sanitizeFilename(name) {
+    return name.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  }
 
   // View Switching
   viewExtractorBtn.addEventListener('click', () => switchView('extractor'));
@@ -249,6 +253,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (response && response.success) {
         currentData = response.data; // { title, text, html, url }
 
+        // Save to local storage for persistence across popup reopens
+        chrome.storage.local.set({ lastExtractedData: currentData });
+
         // Auto-save to History
         db.add({
           title: currentData.title,
@@ -347,11 +354,19 @@ document.addEventListener('DOMContentLoaded', () => {
   function downloadResult(ext) {
     if (!resultText.value) return;
 
+    // Map format 'plain' to 'txt' extension
+    const extension = ext === 'plain' ? 'txt' : ext;
+
+    // Create a meaningful filename
+    const title = currentData && currentData.title ? sanitizeFilename(currentData.title) : 'extracted_text';
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `${title}_${timestamp}.${extension}`;
+
     const blob = new Blob([resultText.value], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `extracted_${Date.now()}.${ext}`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
   }
