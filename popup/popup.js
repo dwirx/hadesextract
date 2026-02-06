@@ -389,18 +389,41 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function downloadResult(ext) {
+  function downloadResult(format) {
     if (!resultText.value) return;
 
-    // Map format 'plain' to 'txt' extension
-    const extension = ext === 'plain' ? 'txt' : ext;
+    let extension = 'txt';
+    let mimeType = 'text/plain';
+
+    switch (format) {
+      case 'markdown':
+      case 'obsidian':
+        extension = 'md';
+        mimeType = 'text/markdown';
+        break;
+      case 'html':
+        extension = 'html';
+        mimeType = 'text/html';
+        break;
+      case 'json':
+        extension = 'json';
+        mimeType = 'application/json';
+        break;
+      case 'structured':
+        extension = 'txt';
+        break;
+      case 'plain':
+      default:
+        extension = 'txt';
+        break;
+    }
 
     // Create a meaningful filename
     const title = currentData && currentData.title ? sanitizeFilename(currentData.title) : 'extracted_text';
     const timestamp = new Date().toISOString().slice(0, 10);
     const filename = `${title}_${timestamp}.${extension}`;
 
-    const blob = new Blob([resultText.value], { type: 'text/plain' });
+    const blob = new Blob([resultText.value], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

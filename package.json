@@ -3,9 +3,6 @@
   "version": "1.0.0",
   "description": "A powerful Chrome extension to extract and format text from any website with smart content detection.",
   "main": "index.js",
-  "directories": {
-    "lib": "lib"
-  },
   "scripts": {
     "build:css": "tailwindcss -i ./popup/input.css -o ./popup/popup.css --minify",
     "build:js": "esbuild content/content.js --bundle --outfile=content/content.bundle.js --minify",
