@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // View Toggle & History
   const viewExtractorBtn = document.getElementById('viewExtractorBtn');
   const viewHistoryBtn = document.getElementById('viewHistoryBtn');
+  const openSettingsBtn = document.getElementById('openSettingsBtn');
   const historySection = document.getElementById('historySection');
   const historyList = document.getElementById('historyList');
   const clearHistoryBtn = document.getElementById('clearHistoryBtn');
@@ -28,6 +29,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const downloadBtn = document.getElementById('downloadBtn');
   const reformatBtn = document.getElementById('reformatBtn');
   const clearBtn = document.getElementById('clearBtn');
+  const aiSummarizeBtn = document.getElementById('aiSummarizeBtn');
+  const aiExplainBtn = document.getElementById('aiExplainBtn');
+  const aiExplainFocus = document.getElementById('aiExplainFocus');
 
   // Stats
   const charCount = document.getElementById('charCount');
@@ -36,6 +40,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const readingTime = document.getElementById('readingTime');
 
   let currentData = null;
+  const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
+  const MAX_AI_INPUT_CHARS = 24000;
+  const LOCAL_SETTINGS_KEY = 'text_extractor_settings';
 
   // Initialize
   (async () => {
@@ -43,6 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!tab) return;
 
     pageInfo.textContent = tab.title || 'Ready';
+    await applySavedSettings();
 
     // 1. Get global last extracted data
     const storage = await chrome.storage.local.get(['lastExtractedData']);
@@ -96,6 +104,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (currentData) displayResult(currentData);
   });
   clearBtn.addEventListener('click', clearResult);
+  aiSummarizeBtn.addEventListener('click', () => runAiAction('summarize'));
+  aiExplainBtn.addEventListener('click', () => runAiAction('explain'));
 
   // Fix: Attach download listener explicitly to the main download button
   if (downloadBtn) {
@@ -113,6 +123,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // View Switching
   viewExtractorBtn.addEventListener('click', () => switchView('extractor'));
   viewHistoryBtn.addEventListener('click', () => switchView('history'));
+  openSettingsBtn.addEventListener('click', async () => {
+    try {
+      await chrome.runtime.openOptionsPage();
+    } catch (error) {
+      console.error('Failed to open options page:', error);
+    }
+  });
 
   clearHistoryBtn.addEventListener('click', async () => {
     if (confirm('Delete all history?')) {
@@ -235,6 +252,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function getFormat() {
     return document.querySelector('input[name="format"]:checked').value;
+  }
+
+  function readSettingsFromLocalStorage() {
+    try {
+      const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+      console.error('Failed to read local settings:', error);
+      return {};
+    }
+  }
+
+  async function getMergedSettings() {
+    try {
+      const result = await chrome.storage.local.get('settings');
+      const localSettings = readSettingsFromLocalStorage();
+      return { ...(result.settings || {}), ...localSettings };
+    } catch (error) {
+      console.error('Failed to read chrome settings:', error);
+      return readSettingsFromLocalStorage();
+    }
+  }
+
+  async function applySavedSettings() {
+    try {
+      const settings = await getMergedSettings();
+
+      if (typeof settings.preserveStructure === 'boolean') document.getElementById('preserveStructure').checked = settings.preserveStructure;
+      if (typeof settings.includeTables === 'boolean') document.getElementById('includeTables').checked = settings.includeTables;
+      if (typeof settings.includeLinks === 'boolean') document.getElementById('includeLinks').checked = settings.includeLinks;
+      if (typeof settings.includeImages === 'boolean') document.getElementById('includeImages').checked = settings.includeImages;
+      if (typeof settings.cleanWhitespace === 'boolean') document.getElementById('cleanWhitespace').checked = settings.cleanWhitespace;
+      if (typeof settings.removeAds === 'boolean') document.getElementById('removeAds').checked = settings.removeAds;
+
+      if (settings.defaultFormat) {
+        const formatInput = document.querySelector(`input[name="format"][value="${settings.defaultFormat}"]`);
+        if (formatInput) formatInput.checked = true;
+      }
+    } catch (error) {
+      console.error('Failed to apply settings in popup:', error);
+    }
   }
 
   async function ensureConnection(tabId) {
@@ -370,6 +430,117 @@ document.addEventListener('DOMContentLoaded', () => {
     statusEl.textContent = msg;
     statusEl.className = `p-3 rounded-xl text-xs font-medium flex items-center gap-2 animate-fade-in ${classes}`;
     statusEl.classList.remove('hidden');
+  }
+
+  function setAiLoading(isLoading) {
+    aiSummarizeBtn.disabled = isLoading;
+    aiExplainBtn.disabled = isLoading;
+
+    if (isLoading) {
+      aiSummarizeBtn.classList.add('opacity-50');
+      aiExplainBtn.classList.add('opacity-50');
+    } else {
+      aiSummarizeBtn.classList.remove('opacity-50');
+      aiExplainBtn.classList.remove('opacity-50');
+    }
+  }
+
+  function truncateInput(text, limit = MAX_AI_INPUT_CHARS) {
+    if (!text || text.length <= limit) return text || '';
+    return `${text.slice(0, limit)}\n\n[Truncated for AI processing due to length.]`;
+  }
+
+  async function callOpenRouter({ apiKey, model, messages }) {
+    const response = await fetch(OPENROUTER_API_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'chrome-extension://text-extractor-pro',
+        'X-Title': 'Text Extractor Pro'
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature: 0.3
+      })
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = data?.error?.message || `OpenRouter error (${response.status})`;
+      throw new Error(message);
+    }
+
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content || typeof content !== 'string') {
+      throw new Error('No AI response content returned');
+    }
+
+    return content.trim();
+  }
+
+  async function runAiAction(actionType) {
+    if (!currentData || !currentData.text || !currentData.text.trim()) {
+      showStatus('Extract text first before using AI.', 'text-amber-600 bg-amber-50');
+      return;
+    }
+
+    try {
+      setAiLoading(true);
+      showStatus('Preparing AI request...', 'text-indigo-600 bg-indigo-50');
+
+      const settings = await getMergedSettings();
+      const apiKey = (settings.openrouterApiKey || '').trim();
+      const model = (settings.openrouterModel || 'openai/gpt-5-nano').trim();
+
+      if (!apiKey) {
+        showStatus('Set OpenRouter API key in Options first.', 'text-red-600 bg-red-50');
+        return;
+      }
+
+      const sourceText = truncateInput(currentData.text);
+      const focusText = (aiExplainFocus?.value || '').trim();
+      const instruction = actionType === 'summarize'
+        ? 'Ringkas teks berikut dalam Bahasa Indonesia yang jelas, padat, dan terstruktur.'
+        : `Jelaskan isi teks berikut dalam Bahasa Indonesia yang mudah dipahami.${focusText ? ` Fokuskan pada: ${focusText}.` : ''}`;
+
+      const messages = [
+        {
+          role: 'system',
+          content: 'Kamu adalah asisten yang membantu merangkum dan menjelaskan teks. Jawaban harus akurat, jelas, dan dalam Bahasa Indonesia.'
+        },
+        {
+          role: 'user',
+          content: `${instruction}\n\nTeks:\n${sourceText}`
+        }
+      ];
+
+      showStatus('Generating AI response...', 'text-indigo-600 bg-indigo-50');
+      const aiText = await callOpenRouter({ apiKey, model, messages });
+
+      currentData = {
+        ...currentData,
+        text: aiText
+      };
+
+      displayResult(currentData);
+      await chrome.storage.local.set({ lastExtractedData: currentData });
+      await db.add({
+        title: `${currentData.title || 'Untitled'} (${actionType === 'summarize' ? 'Ringkasan AI' : 'Penjelasan AI'})`,
+        text: currentData.text,
+        url: currentData.url || '',
+        format: 'plain'
+      });
+
+      showStatus('AI result ready.', 'text-emerald-600 bg-emerald-50');
+      setTimeout(() => statusEl.classList.add('hidden'), 2000);
+    } catch (error) {
+      console.error('AI action failed:', error);
+      showStatus(`AI error: ${error.message}`, 'text-red-600 bg-red-50');
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   async function copyToClipboard() {

@@ -2,6 +2,31 @@
 
 All notable changes to Text Extractor Pro extension will be documented in this file.
 
+## [Unreleased] - 2026-02-13
+
+### ✨ Added - OpenRouter AI Assistant
+- Added `AI Assistant (OpenRouter)` settings section in `Options`
+- Added `OpenRouter API Key` secure input and `Default Model` setting
+- Added OpenRouter `Model Browser` in Options:
+  - Sort: `Terbaru` / `Terlama`
+  - Filter harga: `Semua`, `Free`, `Harga 0`
+  - Select model from live OpenRouter list and apply as default model
+- Added popup AI actions:
+  - `Ringkas` to summarize extracted content in Indonesian
+  - `Jelaskan` to explain extracted content in Indonesian with optional focus topic
+- AI outputs now flow into the same result area for reuse with existing copy/download actions
+
+### 🔧 Technical
+- Added OpenRouter host permission in `manifest.json` for AI requests
+- Popup now reads saved settings (default format + extraction toggles) on load
+- Improved Options AI UX:
+  - Better visual card layout for API/model setup
+  - Softer low-contrast color palette for Settings page
+  - API key `Show/Hide` and `Test API` actions
+  - Searchable model list with direct `Pilih` action and active-model indicator
+  - Settings sync to both `chrome.storage.local` and `localStorage`
+  - Popup now supports merged settings fallback from localStorage
+
 ## [2.1.0] - 2026-01-28
 
 ### ✨ Added - Responsive & Resizable Interface
