@@ -27,6 +27,12 @@ All notable changes to Text Extractor Pro extension will be documented in this f
   - Settings sync to both `chrome.storage.local` and `localStorage`
   - Popup now supports merged settings fallback from localStorage
   - Popup resize UX improved: larger default size, stronger minimum size, smooth drag resize, and `Reset Size` button
+- Added `AI Chat` tab with context-aware Q&A, session continue/delete, and local session persistence
+- Added `Original` vs `AI Result` toggle for extracted content
+- Added icons for `Ringkas` and `Jelaskan` actions
+- History now includes extraction items and chat snapshots
+ - Added `AI Chat` session picker (`New`, `Delete`) and session restore from history item
+ - `Clear All` now clears extraction history and local AI chat sessions
 
 ## [2.1.0] - 2026-01-28
 

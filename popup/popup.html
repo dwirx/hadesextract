@@ -42,6 +42,41 @@
     .header-title {
       min-width: 140px;
     }
+    .view-nav-btn-active {
+      background: #fff;
+      color: #334155;
+      font-weight: 700;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+    }
+    .ai-chat-msg {
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 12px;
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .ai-chat-msg.user {
+      background: #eef2ff;
+      border-color: #c7d2fe;
+    }
+    .ai-chat-msg.assistant {
+      background: #ffffff;
+      border-color: #e2e8f0;
+    }
+    .ai-chat-row {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ai-chat-role {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: #64748b;
+      font-weight: 700;
+    }
 
     .is-popout,
     .is-popout body {
@@ -132,8 +167,12 @@
         <!-- View Toggle -->
         <nav class="flex p-0.5 bg-slate-100 rounded-lg">
           <button id="viewExtractorBtn"
-            class="px-2 py-1 rounded-md text-[10px] font-bold text-slate-700 bg-white shadow-sm transition-all">
+            class="px-2 py-1 rounded-md text-[10px] font-bold text-slate-700 bg-white shadow-sm transition-all view-nav-btn-active">
             Extractor
+          </button>
+          <button id="viewChatBtn"
+            class="px-2 py-1 rounded-md text-[10px] font-medium text-slate-500 hover:text-slate-900 transition-all">
+            AI Chat
           </button>
           <button id="viewHistoryBtn"
             class="px-2 py-1 rounded-md text-[10px] font-medium text-slate-500 hover:text-slate-900 transition-all">
@@ -276,11 +315,13 @@
       <div class="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
         <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">AI</span>
         <button id="aiSummarizeBtn"
-          class="px-2.5 py-1.5 rounded-md bg-indigo-600 text-white text-[10px] font-bold hover:bg-indigo-700 transition-colors">
+          class="px-2.5 py-1.5 rounded-md bg-indigo-600 text-white text-[10px] font-bold hover:bg-indigo-700 transition-colors flex items-center gap-1">
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h12M3 18h8"/></svg>
           Ringkas
         </button>
         <button id="aiExplainBtn"
-          class="px-2.5 py-1.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200 transition-colors">
+          class="px-2.5 py-1.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200 transition-colors flex items-center gap-1">
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v.01M12 8a2 2 0 0 1 2 2c0 1.2-2 1.8-2 3"/></svg>
           Jelaskan
         </button>
         <input id="aiExplainFocus" type="text"
@@ -356,6 +397,11 @@
             </svg>
           </button>
         </div>
+        <div id="resultModeBar" class="px-3 py-2 border-b border-slate-100 hidden items-center gap-2 bg-slate-50">
+          <span class="text-[10px] font-bold text-slate-400 uppercase">View</span>
+          <button id="showOriginalBtn" class="px-2 py-1 rounded text-[10px] font-semibold text-slate-700 bg-white border border-slate-200">Original</button>
+          <button id="showAiBtn" class="px-2 py-1 rounded text-[10px] font-semibold text-slate-500 border border-transparent">AI Result</button>
+        </div>
 
         <div id="resultDisplay" contenteditable="true" spellcheck="false"
           class="flex-1 w-full p-5 text-sm font-mono text-slate-700 bg-transparent outline-none overflow-y-auto custom-scrollbar leading-relaxed whitespace-pre-wrap break-words">
@@ -364,11 +410,30 @@
       </div>
     </section>
 
+    <!-- AI Chat View -->
+    <section id="chatSection" class="flex-1 flex flex-col min-h-0 hidden">
+      <div class="flex items-center gap-2 mb-2">
+        <select id="chatSessionSelect" class="flex-1 px-2 py-1.5 rounded-md border border-slate-200 text-[11px] text-slate-700 bg-white">
+          <option value="">New chat session</option>
+        </select>
+        <button id="newChatBtn" class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200">New</button>
+        <button id="deleteChatBtn" class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-red-600 bg-red-50 hover:bg-red-100">Delete</button>
+      </div>
+      <div class="flex items-center gap-2 mb-2 text-[10px] text-slate-500">
+        <span id="chatContextLabel" class="px-2 py-1 bg-indigo-50 text-indigo-700 rounded-md">Context: no extracted text</span>
+      </div>
+      <div id="chatMessages" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2 p-2 border border-slate-200 rounded-xl bg-white"></div>
+      <div class="mt-2 flex items-center gap-2">
+        <input id="chatInput" type="text" class="flex-1 px-3 py-2 rounded-md border border-slate-200 text-[12px]" placeholder="Tanya tentang teks ini...">
+        <button id="sendChatBtn" class="px-3 py-2 rounded-md bg-indigo-600 text-white text-[11px] font-semibold hover:bg-indigo-700">Send</button>
+      </div>
+    </section>
+
     <!-- History View Container -->
     <section id="historySection" class="flex-1 flex flex-col min-h-0 hidden">
       <!-- History Toolbar -->
       <div class="flex items-center justify-between mb-2">
-        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Saved Extractions</span>
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Saved Extractions & AI Chats</span>
         <button id="clearHistoryBtn"
           class="text-[10px] font-semibold text-red-500 hover:text-red-700 hover:underline transition-all">
           Clear All

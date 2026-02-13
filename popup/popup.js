@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // View Toggle & History
   const viewExtractorBtn = document.getElementById('viewExtractorBtn');
+  const viewChatBtn = document.getElementById('viewChatBtn');
   const viewHistoryBtn = document.getElementById('viewHistoryBtn');
   const openSettingsBtn = document.getElementById('openSettingsBtn');
   const popoutBtn = document.getElementById('popoutBtn');
@@ -45,6 +46,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const aiSummarizeBtn = document.getElementById('aiSummarizeBtn');
   const aiExplainBtn = document.getElementById('aiExplainBtn');
   const aiExplainFocus = document.getElementById('aiExplainFocus');
+  const resultModeBar = document.getElementById('resultModeBar');
+  const showOriginalBtn = document.getElementById('showOriginalBtn');
+  const showAiBtn = document.getElementById('showAiBtn');
+
+  // AI Chat View
+  const chatSection = document.getElementById('chatSection');
+  const chatSessionSelect = document.getElementById('chatSessionSelect');
+  const newChatBtn = document.getElementById('newChatBtn');
+  const deleteChatBtn = document.getElementById('deleteChatBtn');
+  const chatContextLabel = document.getElementById('chatContextLabel');
+  const chatMessages = document.getElementById('chatMessages');
+  const chatInput = document.getElementById('chatInput');
+  const sendChatBtn = document.getElementById('sendChatBtn');
 
   // Stats
   const charCount = document.getElementById('charCount');
@@ -56,6 +70,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
   const MAX_AI_INPUT_CHARS = 24000;
   const LOCAL_SETTINGS_KEY = 'text_extractor_settings';
+  const CHAT_STORAGE_KEY = 'aiChatSessionsV1';
+  let currentResultMode = 'original';
+  let chatSessions = [];
+  let activeChatSessionId = null;
 
   // Initialize
   (async () => {
@@ -84,7 +102,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (candidate) {
-      currentData = candidate;
+      currentData = {
+        ...candidate,
+        originalText: candidate.originalText || candidate.text || '',
+        aiText: candidate.aiText || ''
+      };
+      currentResultMode = currentData.aiText ? 'ai' : 'original';
       displayResult(currentData);
 
       // If it came from storage (e.g. context menu) and NOT history,
@@ -105,6 +128,10 @@ document.addEventListener('DOMContentLoaded', () => {
          }
       }
     }
+    loadChatSessions();
+    updateChatContextLabel();
+    renderChatSessionsDropdown();
+    renderChatMessages();
   })();
 
   // Button Listeners
@@ -135,6 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // View Switching
   viewExtractorBtn.addEventListener('click', () => switchView('extractor'));
+  viewChatBtn.addEventListener('click', () => switchView('chat'));
   viewHistoryBtn.addEventListener('click', () => switchView('history'));
   openSettingsBtn.addEventListener('click', async () => {
     try {
@@ -158,38 +186,179 @@ document.addEventListener('DOMContentLoaded', () => {
   clearHistoryBtn.addEventListener('click', async () => {
     if (confirm('Delete all history?')) {
       await db.clear();
+      chatSessions = [];
+      activeChatSessionId = null;
+      writeChatSessions();
+      renderChatSessionsDropdown();
+      renderChatMessages();
       renderHistory();
+    }
+  });
+  showOriginalBtn.addEventListener('click', () => setResultMode('original'));
+  showAiBtn.addEventListener('click', () => setResultMode('ai'));
+  newChatBtn.addEventListener('click', () => createChatSession());
+  deleteChatBtn.addEventListener('click', () => deleteActiveChatSession());
+  chatSessionSelect.addEventListener('change', () => {
+    activeChatSessionId = chatSessionSelect.value || null;
+    renderChatMessages();
+    updateChatContextLabel();
+  });
+  sendChatBtn.addEventListener('click', sendChatMessage);
+  chatInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendChatMessage();
     }
   });
 
   async function switchView(view) {
+    const setNavActive = (button, active) => {
+      button.classList.toggle('view-nav-btn-active', active);
+      button.classList.toggle('text-slate-700', active);
+      button.classList.toggle('font-bold', active);
+      button.classList.toggle('text-slate-500', !active);
+      button.classList.toggle('font-medium', !active);
+      button.classList.toggle('bg-white', active);
+      button.classList.toggle('shadow-sm', active);
+    };
+
+    setNavActive(viewExtractorBtn, view === 'extractor');
+    setNavActive(viewChatBtn, view === 'chat');
+    setNavActive(viewHistoryBtn, view === 'history');
+
     if (view === 'extractor') {
       historySection.classList.add('hidden');
+      chatSection.classList.add('hidden');
       controlsContainer.classList.remove('hidden');
       if (currentData) resultSection.classList.remove('hidden');
+      return;
+    }
 
-      viewExtractorBtn.classList.replace('text-slate-500', 'text-slate-700');
-      viewExtractorBtn.classList.replace('font-medium', 'font-bold');
-      viewExtractorBtn.classList.add('bg-white', 'shadow-sm');
-
-      viewHistoryBtn.classList.replace('text-slate-700', 'text-slate-500');
-      viewHistoryBtn.classList.replace('font-bold', 'font-medium');
-      viewHistoryBtn.classList.remove('bg-white', 'shadow-sm');
-    } else {
+    if (view === 'chat') {
       controlsContainer.classList.add('hidden');
       resultSection.classList.add('hidden');
-      historySection.classList.remove('hidden');
-
-      viewHistoryBtn.classList.replace('text-slate-500', 'text-slate-700');
-      viewHistoryBtn.classList.replace('font-medium', 'font-bold');
-      viewHistoryBtn.classList.add('bg-white', 'shadow-sm');
-
-      viewExtractorBtn.classList.replace('text-slate-700', 'text-slate-500');
-      viewExtractorBtn.classList.replace('font-bold', 'font-medium');
-      viewExtractorBtn.classList.remove('bg-white', 'shadow-sm');
-
-      await renderHistory();
+      historySection.classList.add('hidden');
+      chatSection.classList.remove('hidden');
+      updateChatContextLabel();
+      renderChatMessages();
+      return;
     }
+
+    controlsContainer.classList.add('hidden');
+    resultSection.classList.add('hidden');
+    chatSection.classList.add('hidden');
+    historySection.classList.remove('hidden');
+    await renderHistory();
+  }
+
+  function readChatSessions() {
+    try {
+      const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.error('Failed to read chat sessions:', error);
+      return [];
+    }
+  }
+
+  function writeChatSessions() {
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(chatSessions));
+  }
+
+  function loadChatSessions() {
+    chatSessions = readChatSessions();
+    if (chatSessions.length && !activeChatSessionId) {
+      activeChatSessionId = chatSessions[0].id;
+    }
+  }
+
+  function getActiveChatSession() {
+    if (!activeChatSessionId) return null;
+    return chatSessions.find(session => session.id === activeChatSessionId) || null;
+  }
+
+  function renderChatSessionsDropdown() {
+    chatSessionSelect.innerHTML = '<option value="">New chat session</option>';
+    chatSessions.forEach(session => {
+      const option = document.createElement('option');
+      option.value = session.id;
+      option.textContent = session.title;
+      if (session.id === activeChatSessionId) option.selected = true;
+      chatSessionSelect.appendChild(option);
+    });
+  }
+
+  function createChatSession() {
+    const baseTitle = currentData?.title || 'Chat Session';
+    const item = {
+      id: `chat_${Date.now()}`,
+      title: `${baseTitle} (${new Date().toLocaleTimeString()})`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      source: {
+        title: currentData?.title || '',
+        url: currentData?.url || '',
+        originalText: currentData?.originalText || currentData?.text || '',
+        aiText: currentData?.aiText || ''
+      },
+      messages: []
+    };
+    chatSessions.unshift(item);
+    activeChatSessionId = item.id;
+    writeChatSessions();
+    renderChatSessionsDropdown();
+    renderChatMessages();
+    updateChatContextLabel();
+  }
+
+  function deleteActiveChatSession() {
+    if (!activeChatSessionId) return;
+    const active = getActiveChatSession();
+    if (!active) return;
+    if (!confirm('Delete this chat session?')) return;
+    chatSessions = chatSessions.filter(session => session.id !== active.id);
+    activeChatSessionId = chatSessions[0]?.id || null;
+    writeChatSessions();
+    renderChatSessionsDropdown();
+    renderChatMessages();
+    updateChatContextLabel();
+  }
+
+  function updateChatContextLabel() {
+    const hasContext = Boolean(currentData?.originalText || currentData?.text);
+    if (hasContext) {
+      chatContextLabel.textContent = `Context: ${currentData.title || 'Extracted text'} (${(currentData.originalText || currentData.text || '').length.toLocaleString()} chars)`;
+    } else {
+      chatContextLabel.textContent = 'Context: no extracted text';
+    }
+  }
+
+  function renderChatMessages() {
+    chatMessages.innerHTML = '';
+    const session = getActiveChatSession();
+    if (!session || !session.messages.length) {
+      chatMessages.innerHTML = '<div class="text-[11px] text-slate-400 p-2">Belum ada chat. Tulis pertanyaan lalu klik Send.</div>';
+      return;
+    }
+    session.messages.forEach(message => {
+      const row = document.createElement('div');
+      row.className = 'ai-chat-row';
+
+      const role = document.createElement('div');
+      role.className = 'ai-chat-role';
+      role.textContent = message.role === 'assistant' ? 'AI' : 'You';
+
+      const bubble = document.createElement('div');
+      bubble.className = `ai-chat-msg ${message.role}`;
+      bubble.textContent = message.content;
+
+      row.appendChild(role);
+      row.appendChild(bubble);
+      chatMessages.appendChild(row);
+    });
+    chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
   async function renderHistory() {
@@ -206,6 +375,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     items.forEach(item => {
+      const itemType = item.type || 'extraction';
+      const isChat = itemType === 'chat';
+      const previewText = isChat
+        ? (item.preview || item.text || item.messages?.[item.messages.length - 1]?.content || '')
+        : (item.text || '');
+
       const el = document.createElement('div');
       el.className = 'group flex flex-col p-3 bg-white border border-slate-100 rounded-xl shadow-sm hover:border-indigo-200 hover:shadow-md transition-all cursor-pointer';
       el.innerHTML = `
@@ -213,9 +388,9 @@ document.addEventListener('DOMContentLoaded', () => {
                  <h3 class="font-bold text-xs text-slate-700 line-clamp-1 break-all">${item.title || 'Untitled'}</h3>
                  <span class="text-[9px] text-slate-400 whitespace-nowrap ml-2">${new Date(item.createdAt).toLocaleDateString()}</span>
              </div>
-             <p class="text-[10px] text-slate-500 line-clamp-2 mb-2 font-mono bg-slate-50 p-1.5 rounded-md border border-slate-100/50">${item.text.substring(0, 150)}</p>
+             <p class="text-[10px] text-slate-500 line-clamp-2 mb-2 font-mono bg-slate-50 p-1.5 rounded-md border border-slate-100/50">${previewText.substring(0, 150)}</p>
              <div class="flex items-center justify-between mt-auto">
-                 <span class="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-wider">${item.format || 'TXT'}</span>
+                 <span class="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded uppercase tracking-wider">${isChat ? 'CHAT' : (item.format || 'TXT')}</span>
                  <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                      <button class="delete-btn p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" title="Delete">
                         <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
@@ -227,8 +402,29 @@ document.addEventListener('DOMContentLoaded', () => {
       // Load Click
       el.addEventListener('click', (e) => {
         if (e.target.closest('.delete-btn')) return;
-        currentData = item;
-        displayResult(item);
+        if (isChat) {
+          if (item.session) {
+            const idx = chatSessions.findIndex(session => session.id === item.session.id);
+            if (idx >= 0) {
+              chatSessions[idx] = item.session;
+            } else {
+              chatSessions.unshift(item.session);
+            }
+            activeChatSessionId = item.session.id;
+            writeChatSessions();
+            renderChatSessionsDropdown();
+          }
+          switchView('chat');
+          renderChatMessages();
+          return;
+        }
+        currentData = {
+          ...item,
+          originalText: item.originalText || item.text || '',
+          aiText: item.aiText || ''
+        };
+        setResultMode(currentData.aiText ? 'ai' : 'original');
+        displayResult(currentData);
         switchView('extractor');
       });
 
@@ -373,7 +569,12 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if (response && response.success) {
-        currentData = response.data; // { title, text, html, url }
+        currentData = {
+          ...response.data,
+          originalText: response.data.text || '',
+          aiText: ''
+        };
+        currentResultMode = 'original';
 
         // Save to local storage for persistence across popup reopens
         chrome.storage.local.set({ lastExtractedData: currentData });
@@ -381,9 +582,12 @@ document.addEventListener('DOMContentLoaded', () => {
         // Auto-save to History
         db.add({
           title: currentData.title,
-          text: currentData.text,
+          text: currentData.originalText,
+          originalText: currentData.originalText,
+          aiText: '',
           url: currentData.url || '',
-          format: getFormat()
+          format: getFormat(),
+          type: 'extraction'
         }).catch(err => console.error('Failed to save history:', err));
 
         displayResult(currentData);
@@ -419,7 +623,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function displayResult(data) {
-    const text = data.text;
+    const originalText = data.originalText || data.text || '';
+    const aiText = data.aiText || '';
+    const text = currentResultMode === 'ai' && aiText ? aiText : originalText;
 
     // Fallback for copy
     resultText.value = text;
@@ -439,14 +645,38 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('sentenceCount').textContent = sentenceCount.toLocaleString();
     document.getElementById('readingTime').textContent = readingTime;
 
+    if (aiText && originalText) {
+      resultModeBar.classList.remove('hidden');
+      resultModeBar.classList.add('flex');
+      showOriginalBtn.classList.toggle('bg-white', currentResultMode !== 'ai');
+      showOriginalBtn.classList.toggle('border-slate-200', currentResultMode !== 'ai');
+      showAiBtn.classList.toggle('bg-white', currentResultMode === 'ai');
+      showAiBtn.classList.toggle('border-slate-200', currentResultMode === 'ai');
+      showAiBtn.classList.toggle('text-slate-700', currentResultMode === 'ai');
+      showAiBtn.classList.toggle('text-slate-500', currentResultMode !== 'ai');
+    } else {
+      resultModeBar.classList.add('hidden');
+      resultModeBar.classList.remove('flex');
+    }
+
     resultSection.classList.remove('hidden');
     pageInfo.textContent = data.title || 'Ready';
+    updateChatContextLabel();
+  }
+
+  function setResultMode(mode) {
+    currentResultMode = mode === 'ai' ? 'ai' : 'original';
+    if (currentData) {
+      displayResult(currentData);
+    }
   }
 
   function clearResult() {
     resultText.value = '';
     resultDisplay.textContent = ''; // Clear display
     resultSection.classList.add('hidden');
+    resultModeBar.classList.add('hidden');
+    resultModeBar.classList.remove('flex');
     statusEl.classList.add('hidden');
   }
 
@@ -472,6 +702,70 @@ document.addEventListener('DOMContentLoaded', () => {
   function truncateInput(text, limit = MAX_AI_INPUT_CHARS) {
     if (!text || text.length <= limit) return text || '';
     return `${text.slice(0, limit)}\n\n[Truncated for AI processing due to length.]`;
+  }
+
+  function buildAiMessages(actionType, sourceText, focusText = '') {
+    const sharedRules = [
+      'Gunakan Bahasa Indonesia yang natural dan jelas.',
+      'Jangan menambahkan fakta baru di luar teks sumber.',
+      'Jika ada bagian yang tidak disebut di sumber, tulis "Tidak disebutkan dalam teks".',
+      'Pertahankan istilah teknis penting agar tidak berubah makna.'
+    ];
+
+    if (actionType === 'summarize') {
+      return [
+        {
+          role: 'system',
+          content: [
+            'Kamu adalah editor ringkasan profesional.',
+            ...sharedRules,
+            'Prioritaskan inti gagasan, argumen utama, dan kesimpulan.',
+            'Output wajib dalam format markdown yang rapi.'
+          ].join(' ')
+        },
+        {
+          role: 'user',
+          content: [
+            'Ringkas teks berikut dengan format:',
+            '1) ## Ringkasan Singkat (2-4 kalimat)',
+            '2) ## Poin Utama (bullet)',
+            '3) ## Kesimpulan (1 paragraf singkat)',
+            '',
+            `Teks sumber:\n${sourceText}`
+          ].join('\n')
+        }
+      ];
+    }
+
+    const focusLine = focusText
+      ? `Fokus penjelasan: ${focusText}`
+      : 'Fokus penjelasan: jelaskan konsep inti, konteks, dan implikasi praktis.';
+
+    return [
+      {
+        role: 'system',
+        content: [
+          'Kamu adalah tutor yang ahli menjelaskan topik kompleks menjadi mudah dipahami.',
+          ...sharedRules,
+          'Gunakan contoh sederhana bila membantu, tanpa keluar dari konteks teks.',
+          'Output wajib dalam format markdown yang rapi.'
+        ].join(' ')
+      },
+      {
+        role: 'user',
+        content: [
+          'Jelaskan isi teks berikut untuk pembaca umum dengan format:',
+          '1) ## Inti Pembahasan',
+          '2) ## Penjelasan Bertahap (3-6 bullet)',
+          '3) ## Istilah Penting (bullet: istilah - arti singkat)',
+          '4) ## Hal yang Perlu Diwaspadai / Catatan',
+          '',
+          focusLine,
+          '',
+          `Teks sumber:\n${sourceText}`
+        ].join('\n')
+      }
+    ];
   }
 
   async function callOpenRouter({ apiKey, model, messages }) {
@@ -523,38 +817,31 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const sourceText = truncateInput(currentData.text);
+      const sourceText = truncateInput(currentData.originalText || currentData.text || '');
       const focusText = (aiExplainFocus?.value || '').trim();
-      const instruction = actionType === 'summarize'
-        ? 'Ringkas teks berikut dalam Bahasa Indonesia yang jelas, padat, dan terstruktur.'
-        : `Jelaskan isi teks berikut dalam Bahasa Indonesia yang mudah dipahami.${focusText ? ` Fokuskan pada: ${focusText}.` : ''}`;
-
-      const messages = [
-        {
-          role: 'system',
-          content: 'Kamu adalah asisten yang membantu merangkum dan menjelaskan teks. Jawaban harus akurat, jelas, dan dalam Bahasa Indonesia.'
-        },
-        {
-          role: 'user',
-          content: `${instruction}\n\nTeks:\n${sourceText}`
-        }
-      ];
+      const messages = buildAiMessages(actionType, sourceText, focusText);
 
       showStatus('Generating AI response...', 'text-indigo-600 bg-indigo-50');
       const aiText = await callOpenRouter({ apiKey, model, messages });
 
       currentData = {
         ...currentData,
+        originalText: currentData.originalText || currentData.text || '',
+        aiText,
         text: aiText
       };
+      currentResultMode = 'ai';
 
       displayResult(currentData);
       await chrome.storage.local.set({ lastExtractedData: currentData });
       await db.add({
         title: `${currentData.title || 'Untitled'} (${actionType === 'summarize' ? 'Ringkasan AI' : 'Penjelasan AI'})`,
-        text: currentData.text,
+        text: currentData.aiText,
+        originalText: currentData.originalText,
+        aiText: currentData.aiText,
         url: currentData.url || '',
-        format: 'plain'
+        format: 'plain',
+        type: 'extraction'
       });
 
       showStatus('AI result ready.', 'text-emerald-600 bg-emerald-50');
@@ -567,17 +854,96 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  async function copyToClipboard() {
-    if (!currentData || !currentData.text) return;
+  async function sendChatMessage() {
+    const question = (chatInput.value || '').trim();
+    if (!question) return;
 
     try {
-      await navigator.clipboard.writeText(currentData.text);
+      sendChatBtn.disabled = true;
+      const settings = await getMergedSettings();
+      const apiKey = (settings.openrouterApiKey || '').trim();
+      const model = (settings.openrouterModel || 'openai/gpt-5-nano').trim();
+
+      if (!apiKey) {
+        showStatus('Set OpenRouter API key in Options first.', 'text-red-600 bg-red-50');
+        return;
+      }
+
+      let session = getActiveChatSession();
+      if (!session) {
+        createChatSession();
+        session = getActiveChatSession();
+      }
+
+      const contextText = truncateInput(currentData?.originalText || currentData?.text || '', 14000);
+      const contextAi = truncateInput(currentData?.aiText || '', 6000);
+      const contextLines = [
+        currentData?.title ? `Judul: ${currentData.title}` : '',
+        currentData?.url ? `URL: ${currentData.url}` : '',
+        contextText ? `Teks original:\n${contextText}` : 'Teks original: tidak tersedia',
+        contextAi ? `Hasil AI terakhir:\n${contextAi}` : ''
+      ].filter(Boolean).join('\n\n');
+
+      session.messages.push({ role: 'user', content: question, ts: new Date().toISOString() });
+      renderChatMessages();
+      chatInput.value = '';
+
+      const chatHistory = session.messages.slice(-12).map(m => ({ role: m.role, content: m.content }));
+      const messages = [
+        {
+          role: 'system',
+          content: 'Kamu adalah asisten diskusi teks. Jawab dalam Bahasa Indonesia, ringkas, akurat, dan selalu berbasis konteks yang diberikan.'
+        },
+        {
+          role: 'user',
+          content: `Konteks dokumen:\n${contextLines}`
+        },
+        ...chatHistory
+      ];
+
+      const answer = await callOpenRouter({ apiKey, model, messages });
+      session.messages.push({ role: 'assistant', content: answer, ts: new Date().toISOString() });
+      session.updatedAt = new Date().toISOString();
+      session.source = {
+        title: currentData?.title || session.source?.title || '',
+        url: currentData?.url || session.source?.url || '',
+        originalText: currentData?.originalText || currentData?.text || session.source?.originalText || '',
+        aiText: currentData?.aiText || session.source?.aiText || ''
+      };
+
+      chatSessions = chatSessions
+        .filter(item => item.id !== session.id);
+      chatSessions.unshift(session);
+      activeChatSessionId = session.id;
+      writeChatSessions();
+      renderChatSessionsDropdown();
+      renderChatMessages();
+      await db.add({
+        title: `${session.source?.title || 'Untitled'} (AI Chat)`,
+        type: 'chat',
+        preview: answer,
+        text: answer,
+        messages: session.messages,
+        session
+      });
+    } catch (error) {
+      console.error('Chat failed:', error);
+      showStatus(`AI chat error: ${error.message}`, 'text-red-600 bg-red-50');
+    } finally {
+      sendChatBtn.disabled = false;
+    }
+  }
+
+  async function copyToClipboard() {
+    if (!resultText.value) return;
+
+    try {
+      await navigator.clipboard.writeText(resultText.value);
       showStatus('Copied to clipboard!', 'text-emerald-600 bg-emerald-50');
       setTimeout(() => statusEl.classList.add('hidden'), 2000);
     } catch (err) {
       console.error('Copy failed:', err);
       // Fallback
-      resultText.value = currentData.text;
       resultText.select();
       document.execCommand('copy');
       showStatus('Copied (fallback)!', 'text-amber-600 bg-amber-50');
