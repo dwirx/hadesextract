@@ -33,6 +33,8 @@ All notable changes to Text Extractor Pro extension will be documented in this f
 - History now includes extraction items and chat snapshots
  - Added `AI Chat` session picker (`New`, `Delete`) and session restore from history item
  - `Clear All` now clears extraction history and local AI chat sessions
+ - Added chat response progress indicator (`thinking` bar + status text)
+ - Added chat copy features: `Copy Chat` for full session and `Copy` per AI message
 
 ## [2.1.0] - 2026-01-28
 

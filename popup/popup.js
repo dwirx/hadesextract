@@ -54,9 +54,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const chatSection = document.getElementById('chatSection');
   const chatSessionSelect = document.getElementById('chatSessionSelect');
   const newChatBtn = document.getElementById('newChatBtn');
+  const copyChatBtn = document.getElementById('copyChatBtn');
   const deleteChatBtn = document.getElementById('deleteChatBtn');
   const chatContextLabel = document.getElementById('chatContextLabel');
   const chatMessages = document.getElementById('chatMessages');
+  const chatThinkingWrap = document.getElementById('chatThinkingWrap');
+  const chatProgressFill = document.getElementById('chatProgressFill');
+  const chatStatusText = document.getElementById('chatStatusText');
   const chatInput = document.getElementById('chatInput');
   const sendChatBtn = document.getElementById('sendChatBtn');
 
@@ -197,6 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
   showOriginalBtn.addEventListener('click', () => setResultMode('original'));
   showAiBtn.addEventListener('click', () => setResultMode('ai'));
   newChatBtn.addEventListener('click', () => createChatSession());
+  copyChatBtn.addEventListener('click', copyCurrentChatSession);
   deleteChatBtn.addEventListener('click', () => deleteActiveChatSession());
   chatSessionSelect.addEventListener('change', () => {
     activeChatSessionId = chatSessionSelect.value || null;
@@ -355,10 +360,83 @@ document.addEventListener('DOMContentLoaded', () => {
       bubble.textContent = message.content;
 
       row.appendChild(role);
+      if (message.role === 'assistant') {
+        const copyBtn = document.createElement('button');
+        copyBtn.type = 'button';
+        copyBtn.className = 'copy-msg-btn';
+        copyBtn.textContent = 'Copy';
+        copyBtn.addEventListener('click', () => copyText(message.content));
+        row.appendChild(copyBtn);
+      }
       row.appendChild(bubble);
       chatMessages.appendChild(row);
     });
     chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function startChatThinking(status = 'AI thinking...') {
+    let progress = 6;
+    if (chatThinkingWrap) chatThinkingWrap.classList.remove('hidden');
+    if (chatProgressFill) chatProgressFill.style.width = `${progress}%`;
+    if (chatStatusText) chatStatusText.textContent = status;
+
+    const timer = setInterval(() => {
+      if (progress >= 92) return;
+      progress += Math.floor(Math.random() * 6) + 1;
+      if (progress > 92) progress = 92;
+      if (chatProgressFill) chatProgressFill.style.width = `${progress}%`;
+    }, 220);
+
+    return {
+      update(nextStatus) {
+        if (chatStatusText && nextStatus) chatStatusText.textContent = nextStatus;
+      },
+      done(nextStatus = 'Done') {
+        clearInterval(timer);
+        if (chatProgressFill) chatProgressFill.style.width = '100%';
+        if (chatStatusText) chatStatusText.textContent = nextStatus;
+        setTimeout(() => {
+          if (chatThinkingWrap) chatThinkingWrap.classList.add('hidden');
+          if (chatProgressFill) chatProgressFill.style.width = '0%';
+        }, 450);
+      }
+    };
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text || '');
+      showStatus('Copied.', 'text-emerald-600 bg-emerald-50');
+      setTimeout(() => statusEl.classList.add('hidden'), 1200);
+    } catch (error) {
+      console.error('Copy failed:', error);
+      try {
+        resultText.value = text || '';
+        resultText.select();
+        document.execCommand('copy');
+        showStatus('Copied (fallback).', 'text-amber-600 bg-amber-50');
+      } catch (fallbackError) {
+        console.error('Fallback copy failed:', fallbackError);
+        showStatus('Copy failed.', 'text-red-600 bg-red-50');
+      }
+    }
+  }
+
+  function copyCurrentChatSession() {
+    const session = getActiveChatSession();
+    if (!session || !session.messages?.length) {
+      showStatus('No chat to copy.', 'text-amber-600 bg-amber-50');
+      return;
+    }
+
+    const transcript = [
+      `Session: ${session.title}`,
+      `Updated: ${session.updatedAt || session.createdAt || '-'}`,
+      '',
+      ...session.messages.map(msg => `${msg.role === 'assistant' ? 'AI' : 'You'}: ${msg.content}`)
+    ].join('\n');
+
+    copyText(transcript);
   }
 
   async function renderHistory() {
@@ -858,6 +936,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const question = (chatInput.value || '').trim();
     if (!question) return;
 
+    const thinking = startChatThinking('Analyzing context...');
     try {
       sendChatBtn.disabled = true;
       const settings = await getMergedSettings();
@@ -900,6 +979,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         ...chatHistory
       ];
+      thinking.update('Generating answer...');
 
       const answer = await callOpenRouter({ apiKey, model, messages });
       session.messages.push({ role: 'assistant', content: answer, ts: new Date().toISOString() });
@@ -926,9 +1006,11 @@ document.addEventListener('DOMContentLoaded', () => {
         messages: session.messages,
         session
       });
+      thinking.done('Answer ready');
     } catch (error) {
       console.error('Chat failed:', error);
       showStatus(`AI chat error: ${error.message}`, 'text-red-600 bg-red-50');
+      thinking.done('Failed');
     } finally {
       sendChatBtn.disabled = false;
     }

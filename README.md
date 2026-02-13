@@ -1,173 +1,184 @@
-# 📄 Text Extractor Pro
+# Text Extractor Pro
 
-A powerful Chrome extension to extract and format text from any website with smart content detection.
+Text Extractor Pro adalah Chrome Extension (Manifest V3) untuk mengekstrak teks dari halaman web, merapikan format output, lalu memprosesnya dengan AI OpenRouter (Ringkas, Jelaskan, dan AI Chat berkelanjutan).
 
-![Version](https://img.shields.io/badge/version-2.0.0-blue)
-![Manifest](https://img.shields.io/badge/manifest-v3-green)
-![License](https://img.shields.io/badge/license-MIT-orange)
+## Fitur Utama
 
-## ✨ Features
+### 1) Ekstraksi Teks
+- Full Page: ambil teks dari seluruh halaman.
+- Article: fokus ke konten utama (lebih minim noise).
+- Select: pilih elemen tertentu dari halaman.
 
-### Extraction Modes
-- **🌐 Full Page** - Extract all visible text from the entire page
-- **📖 Article Only** - Smart detection to extract main content only (removes ads, navigation, sidebars)
-- **🎯 Select Element** - Click on any element to extract only its content
+### 2) Format Output
+- Structured
+- Markdown
+- Obsidian
+- HTML
+- JSON
+- Plain text
 
-### Output Formats
-| Format | Description |
-|--------|-------------|
-| **Structured** | Clean formatted text with headings, lists, and visual separators |
-| **Markdown** | Ready-to-use Markdown format perfect for documentation |
-| **HTML** | Complete HTML document with styling |
-| **JSON** | Structured data format with metadata and statistics |
-| **Plain** | Simple plain text without any formatting |
+### 3) Opsi Ekstraksi
+- Headings
+- Tables
+- Links
+- Images
+- Clean Whitespace
+- Remove Ads
 
-### Smart Features
-- ✅ **Structure Preservation** - Keeps headings (H1-H6), lists, blockquotes intact
-- ✅ **Table Extraction** - Extracts tables in clean formatted layout
-- ✅ **Link Collection** - Optionally includes all link URLs
-- ✅ **Image Descriptions** - Extracts alt text from images
-- ✅ **Ad/Nav Removal** - Intelligently removes ads, navigation, footers
-- ✅ **Whitespace Cleaning** - Removes extra spaces and blank lines
-- ✅ **Responsive Layout** - Popup adapts to different screen sizes
-- ✅ **Resizable Textarea** - Drag to resize the output area (both horizontal and vertical)
-- ✅ **Auto-height Adjustment** - Textarea automatically adjusts to content
-- ✅ **Keyboard Shortcuts** - Quick access with keyboard commands
-  - `Ctrl/Cmd + K` - Clear results
-  - `Ctrl/Cmd + C` - Copy (when not focused on textarea)
-  - `Ctrl/Cmd + S` - Download
-  - `Esc` - Close dropdown menus
+### 4) AI Actions (OpenRouter)
+- Ringkas: rangkuman terstruktur Bahasa Indonesia.
+- Jelaskan: penjelasan bertahap Bahasa Indonesia, bisa pakai fokus topik.
+- Prompt sudah dioptimasi agar:
+  - minim halusinasi,
+  - tetap berbasis sumber,
+  - output lebih rapi dan konsisten.
 
-### Statistics
-- Character count
-- Word count  
-- Sentence count
-- Estimated reading time
+### 5) View Original vs AI Result
+Setelah proses AI, hasil original dan hasil AI disimpan terpisah. Kamu bisa toggle:
+- Original
+- AI Result
 
-### Export Options
-- 📋 **Copy** - One-click copy to clipboard
-- 💾 **Download** - Save as .txt, .md, .html, or .json
+### 6) AI Chat (Context-Aware)
+Tab baru `AI Chat` di popup:
+- tanya jawab berbasis teks hasil ekstraksi,
+- session bisa lanjut,
+- bisa buat session baru,
+- bisa hapus session,
+- progress/thinking bar saat AI menjawab,
+- copy satu pesan AI atau copy seluruh transcript chat.
 
-## 🚀 Installation
+### 7) History
+Riwayat menyimpan:
+- extraction item,
+- hasil AI,
+- snapshot chat.
 
-### Load as Unpacked Extension (Development)
+`Clear All` akan membersihkan:
+- IndexedDB history,
+- local chat sessions.
 
-1. Download or clone this repository
-2. Open Chrome and navigate to `chrome://extensions/`
-3. Enable **Developer mode** (toggle in top-right corner)
-4. Click **Load unpacked**
-5. Select the `extracttextapp` folder
-6. The extension icon will appear in your toolbar
+### 8) Popup UX
+- Popup bisa di-resize (drag kanan/kiri/bawah/pojok).
+- Tombol `Reset Size` untuk kembali ke ukuran ideal.
+- Tombol `Popout` untuk buka UI di tab penuh (lebih lega dari popup bawaan browser).
 
-### Build for Production
+## Struktur Project
 
-```bash
-# Zip the extension folder
-cd extracttextapp
-zip -r ../text-extractor-pro.zip .
-```
-
-Then upload to Chrome Web Store Developer Dashboard.
-
-## 📖 Usage
-
-### Using the Popup
-1. Click the extension icon in your toolbar
-2. Choose extraction mode:
-   - **Full Page** - Gets everything
-   - **Article Only** - Smart extraction
-   - **Select** - Manual element picking
-3. Select your preferred output format
-4. Configure options (structure, tables, links, etc.)
-5. Copy or download the extracted content
-
-### Using Context Menu (Right-click)
-- **📋 Extract Selected Text** - Extracts highlighted text
-- **📄 Extract Full Page** - Extracts entire page
-- **🎯 Select Element to Extract** - Enables selection mode
-- **📝 Copy as Markdown** - Quick markdown copy
-- **📃 Copy as Plain Text** - Quick plain text copy
-
-### Keyboard Shortcuts
-- Press **ESC** to cancel element selection mode
-
-## 📁 Project Structure
-
-```
-extracttextapp/
-├── manifest.json              # Extension configuration (MV3)
-├── popup/
-│   ├── popup.html             # Popup UI
-│   ├── popup.css              # Styles
-│   └── popup.js               # Logic & formatting
-├── content/
-│   ├── content.js             # Page interaction & extraction
-│   └── content.css            # Selection overlay styles
+```text
+.
+├── manifest.json
 ├── background/
-│   └── service-worker.js      # Background tasks & context menu
+│   └── service-worker.js
+├── content/
+│   ├── content.js
+│   ├── content.bundle.js
+│   └── content.css
+├── popup/
+│   ├── popup.html
+│   ├── popup.css
+│   ├── popup.js
+│   └── utils/
+│       ├── db.js
+│       └── index.js
+├── options/
+│   ├── options.html
+│   └── options.js
 ├── icons/
-│   ├── icon16.png
-│   ├── icon48.png
-│   └── icon128.png
+├── CHANGELOG.md
+├── TESTING.md
 └── README.md
 ```
 
-## 🔐 Permissions
+## Instalasi (Development)
 
-| Permission | Purpose |
-|------------|---------|
-| `activeTab` | Access current tab content |
-| `scripting` | Execute extraction scripts |
-| `clipboardWrite` | Copy text to clipboard |
-| `contextMenus` | Right-click menu integration |
-| `storage` | Save user preferences |
+1. Buka `chrome://extensions/`
+2. Aktifkan `Developer mode`
+3. Klik `Load unpacked`
+4. Pilih folder root repository ini
 
-## 🎨 Screenshots
+## Build
 
-### Main Interface
-- Clean, modern UI with gradient accents
-- Format selector cards
-- Real-time statistics
+Project ini tidak butuh build step wajib untuk runtime extension, tapi tersedia script untuk rebuild assets:
 
-### Element Selection
-- Visual highlight overlay
-- Element info tooltip
-- Smooth animations
+```bash
+npm install
+npm run build
+```
 
-## 🛠️ Development
+Script yang tersedia:
+- `npm run build:css`
+- `npm run build:js`
+- `npm run build`
+- `npm run watch`
 
-### Tech Stack
-- Vanilla JavaScript (ES6+)
-- CSS3 with CSS Variables
-- Chrome Extension Manifest V3
+## Konfigurasi OpenRouter
 
-### Key Files
-- `popup/popup.js` - Main extraction logic and formatters
-- `content/content.js` - DOM traversal and selection
-- `background/service-worker.js` - Context menus and message handling
+Buka `Settings` dari popup, lalu isi:
+- OpenRouter API Key
+- Default Model
 
-## 📝 Changelog
+Tambahan di halaman settings:
+- Show/Hide API key
+- Test API
+- Model Browser (sort terbaru/terlama, filter harga, search, pilih model)
 
-### v2.0.0
-- ✨ Added multiple output formats (Markdown, HTML, JSON, Plain)
-- ✨ Added smart article detection
-- ✨ Added table extraction support
-- ✨ Added statistics (words, sentences, reading time)
-- ✨ Added download in multiple formats
-- 🎨 Complete UI redesign
-- ⚡ Improved extraction algorithm
-- 🐛 Better ad/navigation detection
+Settings disimpan ke:
+- `chrome.storage.local`
+- `localStorage` (fallback)
 
-### v1.0.0
-- Initial release
-- Basic text extraction
-- Element selection mode
-- Copy to clipboard
+## Cara Pakai Cepat
 
-## 📄 License
+1. Klik extension icon.
+2. Pilih mode ekstraksi (`Full Page`, `Article`, atau `Select`).
+3. Pilih format output.
+4. Klik `Ringkas` atau `Jelaskan` bila perlu AI output.
+5. Gunakan toggle `Original` / `AI Result`.
+6. Buka tab `AI Chat` untuk diskusi lanjutan berbasis context.
 
-MIT License - feel free to use and modify!
+## Permissions
 
----
+### `permissions`
+- `activeTab`: akses tab aktif.
+- `scripting`: inject content script saat diperlukan.
+- `clipboardWrite`: copy teks/chat.
+- `contextMenus`: menu klik kanan.
+- `storage`: simpan settings dan data runtime.
 
-Made with ❤️ for better web content extraction
+### `host_permissions`
+- `https://openrouter.ai/*`: request model list dan chat completion.
+
+## Penyimpanan Data
+
+- Extraction history: IndexedDB (`TextExtractorDB`, store `extractions`)
+- Chat sessions: `localStorage` key `aiChatSessionsV1`
+- Popup size: `localStorage` key `popupSize`
+- Settings fallback: `localStorage` key `text_extractor_settings`
+
+## Troubleshooting
+
+### AI tidak jalan
+- Pastikan API key valid di Settings.
+- Cek `Test API` di Settings.
+- Pastikan model tersedia dan kredensial OpenRouter memiliki kredit/akses.
+
+### Drag resize terasa mentok
+- Popup Chrome punya batas ukuran internal.
+- Gunakan tombol `Popout` untuk mode tab penuh.
+
+### Hasil ekstraksi kosong
+- Coba mode `Full Page` lalu `Article`.
+- Untuk halaman dinamis, refresh halaman dan ekstrak ulang.
+
+## Manual Testing
+
+Lihat checklist lengkap di:
+- `TESTING.md`
+
+## Changelog
+
+Lihat perubahan versi di:
+- `CHANGELOG.md`
+
+## License
+
+MIT

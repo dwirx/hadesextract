@@ -77,6 +77,44 @@
       color: #64748b;
       font-weight: 700;
     }
+    .chat-tools {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .chat-progress {
+      height: 6px;
+      border-radius: 999px;
+      background: #e2e8f0;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .chat-progress-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #6366f1, #8b5cf6);
+      transition: width .2s ease;
+    }
+    .chat-status {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 6px;
+    }
+    .copy-msg-btn {
+      margin-left: auto;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      color: #475569;
+      font-size: 10px;
+      font-weight: 600;
+      border-radius: 6px;
+      padding: 4px 8px;
+      cursor: pointer;
+    }
+    .copy-msg-btn:hover {
+      background: #f8fafc;
+      border-color: #cbd5e1;
+    }
 
     .is-popout,
     .is-popout body {
@@ -416,6 +454,7 @@
         <select id="chatSessionSelect" class="flex-1 px-2 py-1.5 rounded-md border border-slate-200 text-[11px] text-slate-700 bg-white">
           <option value="">New chat session</option>
         </select>
+        <button id="copyChatBtn" class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200">Copy Chat</button>
         <button id="newChatBtn" class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200">New</button>
         <button id="deleteChatBtn" class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-red-600 bg-red-50 hover:bg-red-100">Delete</button>
       </div>
@@ -423,6 +462,12 @@
         <span id="chatContextLabel" class="px-2 py-1 bg-indigo-50 text-indigo-700 rounded-md">Context: no extracted text</span>
       </div>
       <div id="chatMessages" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2 p-2 border border-slate-200 rounded-xl bg-white"></div>
+      <div id="chatThinkingWrap" class="hidden">
+        <div class="chat-progress">
+          <div id="chatProgressFill" class="chat-progress-fill"></div>
+        </div>
+        <div id="chatStatusText" class="chat-status">AI thinking...</div>
+      </div>
       <div class="mt-2 flex items-center gap-2">
         <input id="chatInput" type="text" class="flex-1 px-3 py-2 rounded-md border border-slate-200 text-[12px]" placeholder="Tanya tentang teks ini...">
         <button id="sendChatBtn" class="px-3 py-2 rounded-md bg-indigo-600 text-white text-[11px] font-semibold hover:bg-indigo-700">Send</button>
