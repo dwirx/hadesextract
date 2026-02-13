@@ -1,6 +1,17 @@
 import { db } from './utils/index.js';
 
 document.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const isPopoutMode = params.get('mode') === 'popout';
+  if (isPopoutMode) {
+    document.documentElement.classList.add('is-popout');
+    document.body.classList.add('is-popout');
+    document.body.style.width = '100vw';
+    document.body.style.height = '100vh';
+    document.body.style.minWidth = '0';
+    document.body.style.minHeight = '0';
+  }
+
   // Elements
   const extractAllBtn = document.getElementById('extractAll');
   const extractArticleBtn = document.getElementById('extractArticle');
@@ -14,6 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const viewExtractorBtn = document.getElementById('viewExtractorBtn');
   const viewHistoryBtn = document.getElementById('viewHistoryBtn');
   const openSettingsBtn = document.getElementById('openSettingsBtn');
+  const popoutBtn = document.getElementById('popoutBtn');
+  const resetSizeBtn = document.getElementById('resetSizeBtn');
   const historySection = document.getElementById('historySection');
   const historyList = document.getElementById('historyList');
   const clearHistoryBtn = document.getElementById('clearHistoryBtn');
@@ -130,6 +143,17 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error('Failed to open options page:', error);
     }
   });
+  if (popoutBtn) {
+    popoutBtn.addEventListener('click', async () => {
+      try {
+        const url = chrome.runtime.getURL('popup/popup.html?mode=popout');
+        await chrome.tabs.create({ url });
+        window.close();
+      } catch (error) {
+        console.error('Failed to open popout tab:', error);
+      }
+    });
+  }
 
   clearHistoryBtn.addEventListener('click', async () => {
     if (confirm('Delete all history?')) {
@@ -613,78 +637,176 @@ document.addEventListener('DOMContentLoaded', () => {
   // ==========================================
   // Custom Resizing Logic
   // ==========================================
-  // ==========================================
-  // Ultimate Resizing Logic (Omni-Directional)
-  // ==========================================
-  let isResizing = false;
-  let currentResizeMode = null; // 'both', 'bottom', 'left', 'right'
+  const POPUP_SIZE_DEFAULT = { width: 860, height: 680 };
+  const POPUP_SIZE_MIN = { width: 720, height: 560 };
+  const POPUP_SIZE_MAX = { width: 2000, height: 2000 };
+  const POPUP_SIZE_KEY = 'popupSize';
+  const resizeState = {
+    active: false,
+    pointerId: null,
+    handle: null,
+    mode: 'corner',
+    startX: 0,
+    startY: 0,
+    startWidth: 0,
+    startHeight: 0
+  };
 
-  // Set initial size
-  const savedSize = localStorage.getItem('popupSize');
-  if (savedSize) {
-    const { width, height } = JSON.parse(savedSize);
-    document.body.style.width = width + 'px';
-    document.body.style.height = height + 'px';
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
   }
 
-  function startResize(e, mode) {
-    isResizing = true;
-    currentResizeMode = mode;
-    e.preventDefault();
+  function getMaxSize() {
+    return {
+      width: Math.min(POPUP_SIZE_MAX.width, Math.max(POPUP_SIZE_MIN.width, screen.availWidth - 24)),
+      height: Math.min(POPUP_SIZE_MAX.height, Math.max(POPUP_SIZE_MIN.height, screen.availHeight - 48))
+    };
+  }
+
+  function applyPopupSize(width, height) {
+    const max = getMaxSize();
+    const safeWidth = clamp(Math.round(width), POPUP_SIZE_MIN.width, max.width);
+    const safeHeight = clamp(Math.round(height), POPUP_SIZE_MIN.height, max.height);
+
+    document.documentElement.style.width = `${safeWidth}px`;
+    document.documentElement.style.height = `${safeHeight}px`;
+    document.body.style.width = `${safeWidth}px`;
+    document.body.style.height = `${safeHeight}px`;
+    document.body.style.minWidth = `${POPUP_SIZE_MIN.width}px`;
+    document.body.style.minHeight = `${POPUP_SIZE_MIN.height}px`;
+
+    return { width: safeWidth, height: safeHeight };
+  }
+
+  function readSavedPopupSize() {
+    try {
+      const raw = localStorage.getItem(POPUP_SIZE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed.width !== 'number' || typeof parsed.height !== 'number') {
+        return null;
+      }
+      return parsed;
+    } catch (error) {
+      console.error('Invalid popup size in storage:', error);
+      return null;
+    }
+  }
+
+  function persistPopupSize(width, height) {
+    localStorage.setItem(POPUP_SIZE_KEY, JSON.stringify({ width, height }));
+  }
+
+  function getCurrentPopupSize() {
+    const rect = document.body.getBoundingClientRect();
+    return {
+      width: Math.round(rect.width) || POPUP_SIZE_DEFAULT.width,
+      height: Math.round(rect.height) || POPUP_SIZE_DEFAULT.height
+    };
+  }
+
+  function resetPopupSize() {
+    const next = applyPopupSize(POPUP_SIZE_DEFAULT.width, POPUP_SIZE_DEFAULT.height);
+    persistPopupSize(next.width, next.height);
+    showStatus('Popup size reset.', 'text-emerald-600 bg-emerald-50');
+    setTimeout(() => statusEl.classList.add('hidden'), 1600);
+  }
+
+  function startResize(event, mode, handle) {
+    const current = getCurrentPopupSize();
+    if (typeof event.button === 'number' && event.button !== 0) return;
+
+    resizeState.active = true;
+    resizeState.pointerId = typeof event.pointerId === 'number' ? event.pointerId : null;
+    resizeState.handle = handle || null;
+    resizeState.mode = mode;
+    resizeState.startX = event.clientX;
+    resizeState.startY = event.clientY;
+    resizeState.startWidth = current.width;
+    resizeState.startHeight = current.height;
     document.body.classList.add('select-none');
+
+    if (resizeState.handle && resizeState.pointerId !== null && resizeState.handle.setPointerCapture) {
+      try {
+        resizeState.handle.setPointerCapture(resizeState.pointerId);
+      } catch (error) {
+        // Ignore capture errors and continue with normal pointer tracking.
+      }
+    }
+
+    event.preventDefault();
   }
 
-  // Bind handles
-  document.getElementById('resizeHandle').addEventListener('mousedown', (e) => startResize(e, 'both'));
-  document.getElementById('resizeBottom').addEventListener('mousedown', (e) => startResize(e, 'bottom'));
-  document.getElementById('resizeLeft').addEventListener('mousedown', (e) => startResize(e, 'width'));
-  // 'resizeRight' is effectively same as handle but standard drag
-  document.getElementById('resizeRight')?.addEventListener('mousedown', (e) => startResize(e, 'width'));
+  function onResizeMove(event) {
+    if (!resizeState.active) return;
 
-  window.addEventListener('mousemove', (e) => {
-    if (!isResizing) return;
+    const dx = event.clientX - resizeState.startX;
+    const dy = event.clientY - resizeState.startY;
 
-    // Calculate new dimensions
-    // Minimum 400x300, Maximum is technically browser-limited (usually ~800x600 for popups)
-    // But we will allow dragging up to screen availability to let the browser enforce the hard limit.
-    const maxWidth = screen.availWidth;
-    const maxHeight = screen.availHeight;
-    const minWidth = 400;
-    const minHeight = 300;
+    let width = resizeState.startWidth;
+    let height = resizeState.startHeight;
 
-    // In Chrome popup, e.clientX is relative to the popup's viewport (0,0 is top-left).
-    // Since it's anchored Top-Right, resizing "width" effectively means dragging the left border?
-    // Actually standard popup is anchored Right. 
-    // So if we drag mouse to the right, clientX increases. Width should increase.
-    // BUT if we drag left edge, we want width to increase as x decreases?
-    // Chrome extension popups behave like normal windows: width extends to the right. 
-    // The "Left Resize" handle on a standard LTR layout is meaningless unless the window moves.
-    // BUT users asked for "omni directional".
-    // Let's assume standard behavior:
-    // Dragging Right Edge/Corner -> Increases Width.
-    // Dragging Bottom Edge -> Increases Height.
-
-    if (currentResizeMode === 'both' || currentResizeMode === 'width') {
-      const newWidth = Math.min(Math.max(e.clientX, minWidth), maxWidth);
-      document.body.style.width = newWidth + 'px';
+    if (resizeState.mode === 'corner' || resizeState.mode === 'right') {
+      width = resizeState.startWidth + dx;
     }
 
-    if (currentResizeMode === 'both' || currentResizeMode === 'bottom') {
-      const newHeight = Math.min(Math.max(e.clientY, minHeight), maxHeight);
-      document.body.style.height = newHeight + 'px';
+    if (resizeState.mode === 'left') {
+      width = resizeState.startWidth - dx;
     }
-  });
 
-  window.addEventListener('mouseup', () => {
-    if (isResizing) {
-      isResizing = false;
-      currentResizeMode = null;
-      document.body.classList.remove('select-none');
-
-      localStorage.setItem('popupSize', JSON.stringify({
-        width: parseInt(document.body.style.width),
-        height: parseInt(document.body.style.height)
-      }));
+    if (resizeState.mode === 'corner' || resizeState.mode === 'bottom') {
+      height = resizeState.startHeight + dy;
     }
-  });
+
+    applyPopupSize(width, height);
+  }
+
+  function stopResize() {
+    if (!resizeState.active) return;
+
+    if (resizeState.handle && resizeState.pointerId !== null && resizeState.handle.releasePointerCapture) {
+      try {
+        resizeState.handle.releasePointerCapture(resizeState.pointerId);
+      } catch (error) {
+        // Ignore release errors.
+      }
+    }
+
+    resizeState.active = false;
+    resizeState.pointerId = null;
+    resizeState.handle = null;
+    document.body.classList.remove('select-none');
+    const current = getCurrentPopupSize();
+    persistPopupSize(current.width, current.height);
+  }
+
+  if (!isPopoutMode) {
+    const initial = readSavedPopupSize() || POPUP_SIZE_DEFAULT;
+    const applied = applyPopupSize(initial.width, initial.height);
+    persistPopupSize(applied.width, applied.height);
+  }
+
+  const resizeHandle = document.getElementById('resizeHandle');
+  const resizeBottom = document.getElementById('resizeBottom');
+  const resizeLeft = document.getElementById('resizeLeft');
+  const resizeRight = document.getElementById('resizeRight');
+  if (!isPopoutMode) {
+    resizeHandle.style.touchAction = 'none';
+    resizeBottom.style.touchAction = 'none';
+    resizeLeft.style.touchAction = 'none';
+    resizeRight.style.touchAction = 'none';
+
+    resizeHandle.addEventListener('pointerdown', (event) => startResize(event, 'corner', resizeHandle));
+    resizeBottom.addEventListener('pointerdown', (event) => startResize(event, 'bottom', resizeBottom));
+    resizeLeft.addEventListener('pointerdown', (event) => startResize(event, 'left', resizeLeft));
+    resizeRight.addEventListener('pointerdown', (event) => startResize(event, 'right', resizeRight));
+
+    window.addEventListener('pointermove', onResizeMove);
+    window.addEventListener('pointerup', stopResize);
+    window.addEventListener('pointercancel', stopResize);
+
+    if (resetSizeBtn) {
+      resetSizeBtn.addEventListener('click', resetPopupSize);
+    }
+  }
 });

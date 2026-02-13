@@ -26,6 +26,7 @@ All notable changes to Text Extractor Pro extension will be documented in this f
   - Searchable model list with direct `Pilih` action and active-model indicator
   - Settings sync to both `chrome.storage.local` and `localStorage`
   - Popup now supports merged settings fallback from localStorage
+  - Popup resize UX improved: larger default size, stronger minimum size, smooth drag resize, and `Reset Size` button
 
 ## [2.1.0] - 2026-01-28
 

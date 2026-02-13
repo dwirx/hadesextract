@@ -10,24 +10,95 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+    }
+
     body {
       font-family: 'Inter', sans-serif;
+      overflow: hidden;
     }
 
     .glass {
       background: rgba(255, 255, 255, 0.7);
       backdrop-filter: blur(10px);
     }
+
+    .app-shell {
+      height: 100%;
+      width: 100%;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .header-actions {
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      row-gap: 6px;
+    }
+
+    .header-title {
+      min-width: 140px;
+    }
+
+    .is-popout,
+    .is-popout body {
+      width: 100vw !important;
+      height: 100vh !important;
+      min-width: 0 !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      background: #f3f6fb;
+    }
+
+    .is-popout .app-shell {
+      max-width: 1320px;
+      margin: 10px auto;
+      border: 1px solid #dbe4f0;
+      border-radius: 14px;
+      box-shadow: 0 10px 30px rgba(15, 23, 42, 0.1);
+      background: #f8fafd;
+      overflow: hidden;
+      height: calc(100vh - 20px);
+    }
+
+    .is-popout #resizeBottom,
+    .is-popout #resizeLeft,
+    .is-popout #resizeRight,
+    .is-popout #resizeHandle,
+    .is-popout #resetSizeBtn {
+      display: none !important;
+    }
+
+    @media (max-width: 980px) {
+      body {
+        width: 100vw !important;
+        height: 100vh !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+      }
+
+      .app-shell {
+        padding: 12px !important;
+      }
+
+      .header-actions nav {
+        order: 3;
+        width: 100%;
+      }
+    }
   </style>
 </head>
 
 <body
   class="bg-slate-50 text-slate-800 antialiased selection:bg-indigo-100 selection:text-indigo-700 flex flex-col overflow-hidden"
-  style="width: 780px; height: 600px;">
+  style="width: 860px; height: 680px; min-width: 720px; min-height: 560px;">
 
-  <div class="flex-1 flex flex-col p-5 h-full min-h-0 gap-4">
+  <div class="app-shell flex-1 flex flex-col p-5 h-full min-h-0 gap-4">
     <!-- Header -->
-    <header class="flex-none flex items-center gap-3">
+    <header class="flex-none flex items-center gap-3 flex-wrap">
       <div class="p-2 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-200">
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
           stroke-linecap="round" stroke-linejoin="round">
@@ -38,11 +109,21 @@
           <line x1="10" y1="9" x2="8" y2="9"></line>
         </svg>
       </div>
-      <div>
+      <div class="header-title">
         <h1 class="font-bold text-lg leading-tight text-slate-900 tracking-tight">Text Extractor</h1>
         <p class="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Professional Tool</p>
       </div>
-      <div class="ml-auto flex items-center gap-2">
+      <div class="ml-auto flex items-center gap-2 header-actions">
+        <button id="popoutBtn"
+          class="px-2 py-1 rounded-md text-[10px] font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all"
+          title="Open in full tab">
+          Popout
+        </button>
+        <button id="resetSizeBtn"
+          class="px-2 py-1 rounded-md text-[10px] font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all"
+          title="Reset popup size">
+          Reset Size
+        </button>
         <button id="openSettingsBtn"
           class="px-2 py-1 rounded-md text-[10px] font-medium text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-all"
           title="Open Settings">
@@ -325,15 +406,15 @@
   <!-- Resize Handles -->
   <!-- Bottom Resize (Height) -->
   <div id="resizeBottom"
-    class="fixed bottom-0 left-0 right-0 h-1.5 cursor-ns-resize z-40 hover:bg-indigo-500/30 transition-colors"></div>
+    class="fixed bottom-0 left-0 right-0 h-3 cursor-ns-resize z-40 hover:bg-indigo-500/30 transition-colors"></div>
 
   <!-- Right Resize (Width) - actually expands left in RTL but here it expands width -->
   <div id="resizeRight"
-    class="fixed top-0 bottom-0 right-0 w-1.5 cursor-ew-resize z-40 hover:bg-indigo-500/30 transition-colors"></div>
+    class="fixed top-0 bottom-0 right-0 w-2 cursor-ew-resize z-40 hover:bg-indigo-500/30 transition-colors"></div>
 
   <!-- Left Resize (Width) -->
   <div id="resizeLeft"
-    class="fixed top-0 bottom-0 left-0 w-1.5 cursor-ew-resize z-40 hover:bg-indigo-500/30 transition-colors"></div>
+    class="fixed top-0 bottom-0 left-0 w-2 cursor-ew-resize z-40 hover:bg-indigo-500/30 transition-colors"></div>
 
   <!-- Corner Resize (Both) -->
   <div id="resizeHandle"
