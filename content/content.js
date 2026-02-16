@@ -126,6 +126,107 @@ function resolveAbsoluteUrl(rawUrl) {
   }
 }
 
+function parseTimestampToSeconds(rawTimestamp) {
+  if (!rawTimestamp) return null;
+  const parts = rawTimestamp.trim().split(':').map(part => Number(part));
+  if (parts.some(Number.isNaN)) return null;
+
+  if (parts.length === 2) {
+    const [minutes, seconds] = parts;
+    return (minutes * 60) + seconds;
+  }
+
+  if (parts.length === 3) {
+    const [hours, minutes, seconds] = parts;
+    return (hours * 3600) + (minutes * 60) + seconds;
+  }
+
+  return null;
+}
+
+function formatTimestampForDisplay(totalSeconds, includeHours = false) {
+  if (typeof totalSeconds !== 'number' || Number.isNaN(totalSeconds) || totalSeconds < 0) return '';
+
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (includeHours || hours > 0) {
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+function extractYouTubeVideoId(pageUrl, root) {
+  const candidates = [pageUrl];
+
+  root.querySelectorAll('iframe[src], a[href]').forEach(el => {
+    const value = el.getAttribute('src') || el.getAttribute('href');
+    if (value) candidates.push(value);
+  });
+
+  for (const rawUrl of candidates) {
+    const absoluteUrl = resolveAbsoluteUrl(rawUrl);
+    if (!absoluteUrl) continue;
+
+    try {
+      const parsed = new URL(absoluteUrl);
+      const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+
+      if (host === 'youtube.com' || host === 'm.youtube.com') {
+        const v = parsed.searchParams.get('v');
+        if (v) return v;
+
+        const embedMatch = parsed.pathname.match(/\/embed\/([a-zA-Z0-9_-]{6,})/);
+        if (embedMatch) return embedMatch[1];
+      }
+
+      if (host === 'youtu.be') {
+        const id = parsed.pathname.split('/').filter(Boolean)[0];
+        if (id) return id;
+      }
+    } catch (_error) {
+      // Ignore malformed URL candidates.
+    }
+  }
+
+  return '';
+}
+
+function slugifyAnchorLabel(value) {
+  return (value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'section';
+}
+
+function collectTranscriptChapters(root) {
+  const chapters = [];
+  const seen = new Set();
+  const headingNodes = root.querySelectorAll('h1, h2, h3');
+
+  headingNodes.forEach(node => {
+    const rawText = normalizeInlineText(node.textContent);
+    if (!rawText || seen.has(rawText)) return;
+    seen.add(rawText);
+
+    const timestampMatch = rawText.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
+    const seconds = timestampMatch ? parseTimestampToSeconds(timestampMatch[1]) : null;
+    const label = normalizeInlineText(rawText.replace(/(\d{1,2}:\d{2}(?::\d{2})?)/, '').replace(/^[-:|]+/, '')) || rawText;
+    const anchor = `chapter${chapters.length}_${slugifyAnchorLabel(label)}`;
+
+    chapters.push({
+      rawText,
+      label,
+      seconds,
+      anchor
+    });
+  });
+
+  return chapters;
+}
+
 function getImageSource(img) {
   return (
     img.getAttribute('src') ||
@@ -371,72 +472,102 @@ tags: [read-later, web-clip]
     result.text = postProcessText(mdOutput);
 
   } else if (format === 'structured') {
-    // ... (Keep existing structured logic but add postProcessText)
-    let output = '';
-    // ... (existing header) ...
-    output += `================================================================================\n`;
-    output += `TITLE: ${title}\n`;
-    output += `SOURCE: ${window.location.href}\n`;
-    output += `DATE: ${new Date().toLocaleString()}\n`;
-    output += `================================================================================\n\n`;
+    const transcriptRoot = document.createElement('div');
+    transcriptRoot.innerHTML = content;
 
-    const turndownService = new TurndownService({
-      headingStyle: 'atx',
-      codeBlockStyle: 'fenced',
-      bulletListMarker: '•',
-      emDelimiter: ''
-    });
+    const pageUrl = window.location.href;
+    const hostName = window.location.hostname.replace(/^www\./, '');
+    const youtubeVideoId = extractYouTubeVideoId(pageUrl, transcriptRoot);
+    const chapters = collectTranscriptChapters(transcriptRoot);
 
-    turndownService.addRule('headers', {
-      filter: ['h1', 'h2', 'h3'],
-      replacement: function (content) {
-        return '\n[' + content.toUpperCase() + ']\n' + '-'.repeat(content.length + 2) + '\n\n';
-      }
-    });
-
-    turndownService.addRule('links', {
-      filter: 'a',
-      replacement: function (content, node) {
-        if (options.includeLinks === false) return content;
-        const href = resolveAbsoluteUrl(node.getAttribute('href'));
-        const text = normalizeInlineText(content) || href;
-        return href ? `${text} (${href})` : text;
-      }
-    });
-
-    // Keep body clean for structured mode and render assets in appendix.
-    turndownService.addRule('images', {
-      filter: 'img', 
-      replacement: function () {
-        return '';
-      }
-    });
-
-    output += turndownService.turndown(content).trim();
-
-    // Appendices (Links & Images)
-    // Links (existing logic)
-    if (references.links.length > 0) {
-        output += '\n\n\n--------------------------------------------------------------------------------\n';
-        output += 'LINKS REFERENCED\n';
-        output += '--------------------------------------------------------------------------------\n';
-        references.links.forEach((l, i) => {
-          output += `[${i + 1}] ${l.text}\n    ${l.url}\n`;
-        });
+    let output = `# Transcript for ${title}\n\n`;
+    output += `This is a transcript extracted from ${hostName}. Timestamps are clickable when a YouTube source is available. Please note this transcript is automatically generated and may contain errors.\n\n`;
+    output += 'Here are some useful links:\n\n';
+    output += `- Go back to [this page](${pageUrl})\n`;
+    if (youtubeVideoId) {
+      output += `- Watch the [full YouTube version](https://youtube.com/watch?v=${youtubeVideoId})\n`;
+    } else if (references.links[0]?.url) {
+      output += `- Open a [related source link](${references.links[0].url})\n`;
     }
 
-    // Images (from collectedImages)
-    if (references.images.length > 0) {
-        output += '\n\n--------------------------------------------------------------------------------\n';
-        output += 'IMAGE ASSETS\n';
-        output += '--------------------------------------------------------------------------------\n';
-        references.images.forEach((img, i) => {
-          output += `[${i + 1}] ${img.alt}\n`;
-          if (img.caption) {
-            output += `    Caption: ${img.caption}\n`;
+    if (chapters.length > 0) {
+      output += '\n## Table of Contents\n\n';
+      output += 'Here are the loose chapters in the conversation:\n\n';
+
+      chapters.forEach(chapter => {
+        const label = chapter.label || chapter.rawText;
+        let timeLabel = '';
+        let chapterLink = `#${chapter.anchor}`;
+
+        if (typeof chapter.seconds === 'number') {
+          timeLabel = formatTimestampForDisplay(chapter.seconds);
+          if (youtubeVideoId) {
+            chapterLink = `https://youtube.com/watch?v=${youtubeVideoId}&t=${chapter.seconds}`;
           }
-          output += `    ${img.src}\n`;
-        });
+        }
+
+        const lineLabel = timeLabel ? `${timeLabel} - ${label}` : label;
+        output += `- [${lineLabel}](${chapterLink})\n`;
+      });
+    }
+
+    if (youtubeVideoId) {
+      output += `\n<iframe width="700" height="394" src="https://www.youtube.com/embed/${youtubeVideoId}" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen="" style="margin: 0px 0px 1.71429rem; padding: 0px; border: 0px; font-size: 16px; vertical-align: baseline; max-width: 100%;"></iframe>\n`;
+    }
+
+    const chapterByHeading = new Map();
+    chapters.forEach(chapter => {
+      chapterByHeading.set(chapter.rawText, chapter);
+    });
+
+    const transcriptBlocks = [];
+    const contentNodes = transcriptRoot.querySelectorAll('h1, h2, h3, p, li, blockquote');
+    contentNodes.forEach(node => {
+      const text = normalizeInlineText(node.textContent);
+      if (!text) return;
+
+      if (/^H[1-3]$/.test(node.tagName)) {
+        const chapter = chapterByHeading.get(text);
+        if (chapter) {
+          transcriptBlocks.push(`<a id="${chapter.anchor}"></a>`);
+          transcriptBlocks.push(`## ${chapter.label || chapter.rawText}`);
+          transcriptBlocks.push('');
+          return;
+        }
+        transcriptBlocks.push(`## ${text}`);
+        transcriptBlocks.push('');
+        return;
+      }
+
+      const speakerMatch = text.match(/^([A-Za-z][A-Za-z0-9 .'\-]{1,80}?)\s*[\(\[](\d{1,2}:\d{2}(?::\d{2})?)[\)\]]\s*[:\-–—]?\s*(.+)$/);
+      if (speakerMatch) {
+        const speaker = normalizeInlineText(speakerMatch[1]);
+        const rawTimestamp = speakerMatch[2];
+        const body = normalizeInlineText(speakerMatch[3]);
+        const seconds = parseTimestampToSeconds(rawTimestamp);
+        const timestampDisplay = typeof seconds === 'number'
+          ? formatTimestampForDisplay(seconds, true)
+          : rawTimestamp;
+
+        if (youtubeVideoId && typeof seconds === 'number') {
+          transcriptBlocks.push(`**${speaker}**[(${timestampDisplay})](https://youtube.com/watch?v=${youtubeVideoId}&t=${seconds}) ${body}`);
+        } else {
+          transcriptBlocks.push(`**${speaker}** (${timestampDisplay}) ${body}`);
+        }
+      } else {
+        transcriptBlocks.push(text);
+      }
+
+      transcriptBlocks.push('');
+    });
+
+    output += '\n' + transcriptBlocks.join('\n').trim();
+
+    if (references.links.length > 0 && options.includeLinks !== false) {
+      output += '\n\n## Referenced Links\n\n';
+      references.links.slice(0, 15).forEach(link => {
+        output += `- [${link.text}](${link.url})\n`;
+      });
     }
 
     result.text = postProcessText(output);
