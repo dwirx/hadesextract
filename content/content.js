@@ -73,6 +73,23 @@ function cleanDOM(doc) {
       img.remove();
     }
   });
+
+  // 3. Remove common non-article containers that often pollute blog extraction
+  const noisySelectors = [
+    'nav',
+    'aside',
+    'footer',
+    '[role="complementary"]',
+    '[aria-label*="share" i]',
+    '[class*="sidebar" i]',
+    '[class*="related" i]',
+    '[class*="recommended" i]',
+    '[class*="newsletter" i]',
+    '[class*="comment" i]'
+  ];
+  noisySelectors.forEach(selector => {
+    doc.querySelectorAll(selector).forEach(el => el.remove());
+  });
 }
 
 function postProcessText(text) {
@@ -91,6 +108,88 @@ function postProcessText(text) {
     .trim();
 }
 
+function normalizeInlineText(value) {
+  if (!value) return '';
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function resolveAbsoluteUrl(rawUrl) {
+  if (!rawUrl) return '';
+  const candidate = rawUrl.trim();
+  if (!candidate || candidate.startsWith('data:') || candidate.startsWith('javascript:')) {
+    return '';
+  }
+  try {
+    return new URL(candidate, window.location.href).href;
+  } catch (_error) {
+    return '';
+  }
+}
+
+function getImageSource(img) {
+  return (
+    img.getAttribute('src') ||
+    img.getAttribute('data-src') ||
+    img.getAttribute('data-original') ||
+    img.getAttribute('data-lazy-src') ||
+    img.getAttribute('data-url') ||
+    ''
+  );
+}
+
+function normalizeAssetUrls(root) {
+  root.querySelectorAll('a[href]').forEach(link => {
+    const absoluteUrl = resolveAbsoluteUrl(link.getAttribute('href'));
+    if (absoluteUrl) {
+      link.setAttribute('href', absoluteUrl);
+    }
+  });
+
+  root.querySelectorAll('img').forEach(img => {
+    const absoluteUrl = resolveAbsoluteUrl(getImageSource(img));
+    if (absoluteUrl) {
+      img.setAttribute('src', absoluteUrl);
+    }
+  });
+}
+
+function collectAssetReferences(root, options = {}) {
+  const links = [];
+  const images = [];
+  const seenLinks = new Set();
+  const seenImages = new Set();
+
+  if (options.includeLinks !== false) {
+    root.querySelectorAll('a[href]').forEach(link => {
+      const url = resolveAbsoluteUrl(link.getAttribute('href'));
+      const text = normalizeInlineText(link.textContent);
+      if (!url || seenLinks.has(url)) return;
+      seenLinks.add(url);
+      links.push({
+        text: text || url,
+        url
+      });
+    });
+  }
+
+  if (options.includeImages !== false) {
+    root.querySelectorAll('img').forEach(img => {
+      const src = resolveAbsoluteUrl(getImageSource(img));
+      if (!src || seenImages.has(src)) return;
+      seenImages.add(src);
+      const figureCaption = normalizeInlineText(img.closest('figure')?.querySelector('figcaption')?.textContent || '');
+      const caption = normalizeInlineText(img.closest('figure')?.querySelector('figcaption')?.textContent || '');
+      images.push({
+        alt: normalizeInlineText(img.getAttribute('alt')) || figureCaption || 'Image',
+        caption,
+        src
+      });
+    });
+  }
+
+  return { links, images };
+}
+
 function getArticle(docClone) {
   try {
     cleanDOM(docClone); // Clean before parsing
@@ -105,12 +204,35 @@ function getArticle(docClone) {
   }
 }
 
+function getFullPageArticle(docClone) {
+  // Try readability first to keep main article quality high on blog/news pages.
+  const readable = getArticle(docClone);
+  if (readable?.content) return readable;
+
+  // Fallback to semantic content roots before full body.
+  const root = docClone.querySelector('main, article, [role="main"]');
+  if (root) {
+    return {
+      title: document.title,
+      content: root.innerHTML,
+      textContent: root.textContent || '',
+      excerpt: ''
+    };
+  }
+
+  return {
+    title: document.title,
+    content: document.body.innerHTML,
+    textContent: document.body.innerText,
+    excerpt: ''
+  };
+}
+
 function convertToFormat(article, format, options = {}) {
   if (!article) return { title: document.title, content: '' };
 
   let content = article.content; // HTML
   const title = article.title;
-  const collectedImages = []; // Store images for the gallery
 
   // Clean using DOMPurify
   content = DOMPurify.sanitize(content);
@@ -118,6 +240,7 @@ function convertToFormat(article, format, options = {}) {
   // Custom filtering based on options
   const tempDiv = document.createElement('div');
   tempDiv.innerHTML = content;
+  normalizeAssetUrls(tempDiv);
 
   if (options.includeTables === false) {
     tempDiv.querySelectorAll('table').forEach(el => el.remove());
@@ -134,6 +257,7 @@ function convertToFormat(article, format, options = {}) {
     });
   }
 
+  const references = collectAssetReferences(tempDiv, options);
   content = tempDiv.innerHTML;
 
   const result = {
@@ -161,23 +285,23 @@ function convertToFormat(article, format, options = {}) {
       }
     });
 
-    // Smart Image Handling: Inline + Collection
+    turndownService.addRule('linksToAbsolute', {
+      filter: 'a',
+      replacement: function (content, node) {
+        const href = resolveAbsoluteUrl(node.getAttribute('href'));
+        const text = normalizeInlineText(content) || href;
+        if (!href) return text;
+        return `[${text}](${href})`;
+      }
+    });
+
+    // Blog-ready image handling: inline markdown with absolute URL.
     turndownService.addRule('images', {
       filter: 'img',
       replacement: function (content, node) {
-        const alt = node.alt || '';
-        let src = node.getAttribute('src') || node.dataset.src || '';
-
-        // Resolve relative URLs
-        try {
-          src = new URL(src, window.location.href).href;
-        } catch (e) {}
-
-        if (!src || src.startsWith('data:')) return ''; // Skip base64 noise
-
-        collectedImages.push({ alt, src });
-
-        // Add extra newlines for spacing
+        const alt = normalizeInlineText(node.getAttribute('alt')) || 'Image';
+        const src = resolveAbsoluteUrl(getImageSource(node));
+        if (!src) return '';
         return `\n\n![${alt}](${src})\n\n`;
       }
     });
@@ -205,6 +329,16 @@ tags: [read-later, web-clip]
       mdOutput += `---\n\n`;
     }
 
+    if (references.images.length > 0 && options.includeImages !== false) {
+      const featured = references.images[0];
+      mdOutput += `## Featured Image\n\n`;
+      mdOutput += `![${featured.alt}](${featured.src})\n\n`;
+      if (featured.caption) {
+        mdOutput += `_${featured.caption}_\n\n`;
+      }
+      mdOutput += `---\n\n`;
+    }
+
     if (options.preserveStructure === false) {
       turndownService.addRule('noHeadings', {
         filter: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
@@ -216,11 +350,21 @@ tags: [read-later, web-clip]
 
     mdOutput += turndownService.turndown(content);
 
-    // Append Image Gallery if any images found
-    if (collectedImages.length > 0 && options.includeImages) {
-      mdOutput += `\n\n---\n### Image Gallery\n\n`;
-      collectedImages.forEach((img, idx) => {
-        mdOutput += `${idx+1}. **${img.alt || 'Image'}**\n   ${img.src}\n`;
+    if (references.links.length > 0) {
+      mdOutput += `\n\n---\n## Link References\n\n`;
+      references.links.forEach((link, idx) => {
+        mdOutput += `${idx + 1}. [${link.text}](${link.url})\n`;
+      });
+    }
+
+    if (references.images.length > 0) {
+      mdOutput += `\n\n---\n## Image Assets\n\n`;
+      references.images.forEach((img, idx) => {
+        mdOutput += `${idx + 1}. **${img.alt}**\n`;
+        if (img.caption) {
+          mdOutput += `   Caption: ${img.caption}\n`;
+        }
+        mdOutput += `   ${img.src}\n`;
       });
     }
 
@@ -250,23 +394,20 @@ tags: [read-later, web-clip]
       }
     });
 
-    if (options.includeLinks) {
-      turndownService.addRule('links', {
-        filter: 'a',
-        replacement: function (content, node) {
-          return content;
-        }
-      });
-    }
-
-    // Capture images for list but remove from text
-    turndownService.addRule('images', {
-      filter: 'img',
+    turndownService.addRule('links', {
+      filter: 'a',
       replacement: function (content, node) {
-        const src = node.getAttribute('src') || node.dataset.src;
-        if (src && !src.startsWith('data:')) {
-           collectedImages.push({ alt: node.alt, src: src });
-        }
+        if (options.includeLinks === false) return content;
+        const href = resolveAbsoluteUrl(node.getAttribute('href'));
+        const text = normalizeInlineText(content) || href;
+        return href ? `${text} (${href})` : text;
+      }
+    });
+
+    // Keep body clean for structured mode and render assets in appendix.
+    turndownService.addRule('images', {
+      filter: 'img', 
+      replacement: function () {
         return '';
       }
     });
@@ -275,30 +416,26 @@ tags: [read-later, web-clip]
 
     // Appendices (Links & Images)
     // Links (existing logic)
-    if (options.includeLinks) {
-      const links = [];
-      tempDiv.querySelectorAll('a').forEach(a => {
-        if (a.href && !a.href.startsWith('javascript') && a.textContent.trim()) {
-          links.push({ text: a.textContent.trim(), url: a.href });
-        }
-      });
-      if (links.length > 0) {
+    if (references.links.length > 0) {
         output += '\n\n\n--------------------------------------------------------------------------------\n';
         output += 'LINKS REFERENCED\n';
         output += '--------------------------------------------------------------------------------\n';
-        links.forEach((l, i) => {
+        references.links.forEach((l, i) => {
           output += `[${i + 1}] ${l.text}\n    ${l.url}\n`;
         });
-      }
     }
 
     // Images (from collectedImages)
-    if (collectedImages.length > 0 && options.includeImages) {
+    if (references.images.length > 0) {
         output += '\n\n--------------------------------------------------------------------------------\n';
-        output += 'IMAGES\n';
+        output += 'IMAGE ASSETS\n';
         output += '--------------------------------------------------------------------------------\n';
-        collectedImages.forEach((img, i) => {
-          output += `[${i + 1}] ${img.alt || 'Image'}\n    ${img.src}\n`;
+        references.images.forEach((img, i) => {
+          output += `[${i + 1}] ${img.alt}\n`;
+          if (img.caption) {
+            output += `    Caption: ${img.caption}\n`;
+          }
+          output += `    ${img.src}\n`;
         });
     }
 
@@ -399,13 +536,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
           // If user wants EVERYTHING, we should just use body.innerHTML but run it through DOMPurify + Turndown.
 
           if (request.mode === 'full') {
-            // For full page, we define "article" as the whole body wrapper
-            article = {
-              title: document.title,
-              content: document.body.innerHTML,
-              textContent: document.body.innerText,
-              excerpt: ''
-            };
+            article = getFullPageArticle(docClone);
           } else {
             article = getArticle(docClone);
           }
