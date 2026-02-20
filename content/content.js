@@ -84,9 +84,14 @@ function cleanDOM(doc) {
     '[class*="sidebar" i]',
     '[class*="related" i]',
     '[class*="recommended" i]',
-    '[class*="newsletter" i]',
     '[class*="comment" i]'
   ];
+
+  // Substack uses 'newsletter-post' for the main article wrapper, so we cannot blindly remove 'newsletter' classes.
+  if (!window.location.hostname.includes('substack.com')) {
+    noisySelectors.push('[class*="newsletter" i]');
+  }
+
   noisySelectors.forEach(selector => {
     doc.querySelectorAll(selector).forEach(el => el.remove());
   });
@@ -227,6 +232,250 @@ function collectTranscriptChapters(root) {
   return chapters;
 }
 
+function createLegacyStructuredHeader(title, pageUrl) {
+  let header = '================================================================================\n';
+  header += `TITLE: ${title}\n`;
+  header += `SOURCE: ${pageUrl}\n`;
+  header += `DATE: ${new Date().toLocaleString()}\n`;
+  header += '================================================================================\n\n';
+  return header;
+}
+
+function collectPageUrls(root, pageUrl) {
+  const urls = new Set();
+  const pushUrl = raw => {
+    const resolved = resolveAbsoluteUrl(raw);
+    if (resolved) urls.add(resolved);
+  };
+
+  pushUrl(pageUrl);
+
+  const canonical = root.querySelector('link[rel="canonical"]')?.getAttribute('href');
+  if (canonical) pushUrl(canonical);
+
+  root.querySelectorAll('a[href], iframe[src], video[src], source[src], img[src]').forEach(node => {
+    pushUrl(node.getAttribute('href') || node.getAttribute('src'));
+  });
+
+  return Array.from(urls);
+}
+
+function getSpeakerTimestampMatch(text) {
+  if (!text) return null;
+  return text.match(/^([A-Za-z][A-Za-z0-9 .'\-]{1,80}?)\s*[\(\[](\d{1,2}:\d{2}(?::\d{2})?)[\)\]]\s*[:\-–—]?\s*(.+)$/);
+}
+
+function isTranscriptLike(root, title, pageUrl, chapters, youtubeVideoId) {
+  let speakerLineCount = 0;
+  let timestampLineCount = 0;
+
+  root.querySelectorAll('p, li, blockquote').forEach(node => {
+    const text = normalizeInlineText(node.textContent);
+    if (!text) return;
+
+    if (getSpeakerTimestampMatch(text)) {
+      speakerLineCount += 1;
+    }
+
+    if (/\b\d{1,2}:\d{2}(?::\d{2})?\b/.test(text)) {
+      timestampLineCount += 1;
+    }
+  });
+
+  const transcriptHints = `${title} ${pageUrl}`.toLowerCase();
+  const hasTranscriptKeyword = /transcript|podcast|episode/.test(transcriptHints);
+  const chapterTimestampCount = chapters.filter(ch => typeof ch.seconds === 'number').length;
+
+  // Conservative heuristic: prefer article mode unless transcript signals are clear.
+  if (speakerLineCount >= 3) return true;
+  if (speakerLineCount >= 2 && chapterTimestampCount >= 2) return true;
+  if (hasTranscriptKeyword && (speakerLineCount >= 1 || chapterTimestampCount >= 3)) return true;
+  if (youtubeVideoId && speakerLineCount >= 2 && timestampLineCount >= 4) return true;
+
+  return false;
+}
+
+function createStructuredTranscriptOutput({
+  content,
+  title,
+  pageUrl,
+  references,
+  options
+}) {
+  const transcriptRoot = document.createElement('div');
+  transcriptRoot.innerHTML = content;
+  const pageUrls = collectPageUrls(document, pageUrl);
+
+  const hostName = window.location.hostname.replace(/^www\./, '');
+  const youtubeVideoId = extractYouTubeVideoId(pageUrl, transcriptRoot);
+  const chapters = collectTranscriptChapters(transcriptRoot);
+
+  let output = createLegacyStructuredHeader(title, pageUrl);
+  output += `# Transcript for ${title}\n\n`;
+  output += `This is a transcript extracted from ${hostName}. Timestamps are clickable when a YouTube source is available. Please note this transcript is automatically generated and may contain errors.\n\n`;
+  output += 'Here are some useful links:\n\n';
+  output += `- Go back to [this page](${pageUrl})\n`;
+  if (youtubeVideoId) {
+    output += `- Watch the [full YouTube version](https://youtube.com/watch?v=${youtubeVideoId})\n`;
+  } else if (references.links[0]?.url) {
+    output += `- Open a [related source link](${references.links[0].url})\n`;
+  }
+
+  if (chapters.length > 0) {
+    output += '\n## Table of Contents\n\n';
+    output += 'Here are the loose chapters in the conversation:\n\n';
+
+    chapters.forEach(chapter => {
+      const label = chapter.label || chapter.rawText;
+      let timeLabel = '';
+      let chapterLink = `#${chapter.anchor}`;
+
+      if (typeof chapter.seconds === 'number') {
+        timeLabel = formatTimestampForDisplay(chapter.seconds);
+        if (youtubeVideoId) {
+          chapterLink = `https://youtube.com/watch?v=${youtubeVideoId}&t=${chapter.seconds}`;
+        }
+      }
+
+      const lineLabel = timeLabel ? `${timeLabel} - ${label}` : label;
+      output += `- [${lineLabel}](${chapterLink})\n`;
+    });
+  }
+
+  if (youtubeVideoId) {
+    output += `\n<iframe width="700" height="394" src="https://www.youtube.com/embed/${youtubeVideoId}" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen="" style="margin: 0px 0px 1.71429rem; padding: 0px; border: 0px; font-size: 16px; vertical-align: baseline; max-width: 100%;"></iframe>\n`;
+  }
+
+  const chapterByHeading = new Map();
+  chapters.forEach(chapter => {
+    chapterByHeading.set(chapter.rawText, chapter);
+  });
+
+  const transcriptBlocks = [];
+  const contentNodes = transcriptRoot.querySelectorAll('h1, h2, h3, p, li, blockquote');
+  contentNodes.forEach(node => {
+    const text = normalizeInlineText(node.textContent);
+    if (!text) return;
+
+    if (/^H[1-3]$/.test(node.tagName)) {
+      const chapter = chapterByHeading.get(text);
+      if (chapter) {
+        transcriptBlocks.push(`<a id="${chapter.anchor}"></a>`);
+        transcriptBlocks.push(`## ${chapter.label || chapter.rawText}`);
+        transcriptBlocks.push('');
+        return;
+      }
+      transcriptBlocks.push(`## ${text}`);
+      transcriptBlocks.push('');
+      return;
+    }
+
+    const speakerMatch = getSpeakerTimestampMatch(text);
+    if (speakerMatch) {
+      const speaker = normalizeInlineText(speakerMatch[1]);
+      const rawTimestamp = speakerMatch[2];
+      const body = normalizeInlineText(speakerMatch[3]);
+      const seconds = parseTimestampToSeconds(rawTimestamp);
+      const timestampDisplay = typeof seconds === 'number'
+        ? formatTimestampForDisplay(seconds, true)
+        : rawTimestamp;
+
+      if (youtubeVideoId && typeof seconds === 'number') {
+        transcriptBlocks.push(`**${speaker}**[(${timestampDisplay})](https://youtube.com/watch?v=${youtubeVideoId}&t=${seconds}) ${body}`);
+      } else {
+        transcriptBlocks.push(`**${speaker}** (${timestampDisplay}) ${body}`);
+      }
+    } else {
+      transcriptBlocks.push(text);
+    }
+
+    transcriptBlocks.push('');
+  });
+
+  output += '\n' + transcriptBlocks.join('\n').trim();
+
+  if (references.links.length > 0 && options.includeLinks !== false) {
+    output += '\n\n## Referenced Links\n\n';
+    references.links.slice(0, 15).forEach(link => {
+      output += `- [${link.text}](${link.url})\n`;
+    });
+  }
+
+  if (pageUrls.length > 0 && options.includeLinks !== false) {
+    output += '\n\n## All Page URLs\n\n';
+    pageUrls.slice(0, 120).forEach(url => {
+      output += `- ${url}\n`;
+    });
+  }
+
+  return output;
+}
+
+function createStructuredArticleOutput({
+  content,
+  title,
+  pageUrl,
+  article,
+  options
+}) {
+  const pageUrls = collectPageUrls(document, pageUrl);
+  const turndownService = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+    bulletListMarker: '-',
+    hr: '---'
+  });
+
+  turndownService.addRule('linksToAbsolute', {
+    filter: 'a',
+    replacement: function (innerText, node) {
+      const href = resolveAbsoluteUrl(node.getAttribute('href'));
+      const text = normalizeInlineText(innerText) || href;
+      if (!href || options.includeLinks === false) return text;
+      return `[${text}](${href})`;
+    }
+  });
+
+  turndownService.addRule('imagesInline', {
+    filter: 'img',
+    replacement: function (_innerText, node) {
+      if (options.includeImages === false) return '';
+      const src = resolveAbsoluteUrl(getImageSource(node));
+      if (!src) return '';
+
+      const figureCaption = normalizeInlineText(node.closest('figure')?.querySelector('figcaption')?.textContent || '');
+      const alt = normalizeInlineText(node.getAttribute('alt')) || figureCaption || 'img';
+      return `\n\n![${alt}](${src})\n\n`;
+    }
+  });
+
+  const markdownBody = turndownService.turndown(content).trim();
+  const excerpt = normalizeInlineText(article.excerpt || '');
+
+  let output = createLegacyStructuredHeader(title, pageUrl);
+  output += `# ${title}\n\n`;
+  if (excerpt) {
+    output += `${excerpt}\n\n`;
+  }
+  output += `Source: [${pageUrl}](${pageUrl})\n\n`;
+  output += `${markdownBody}\n`;
+
+  if (pageUrls.length > 0 && options.includeLinks !== false) {
+    output += '\n\n## All Page URLs\n\n';
+    pageUrls.slice(0, 120).forEach(url => {
+      output += `- ${url}\n`;
+    });
+  }
+
+  return output;
+}
+
+function isArticleWeak(article) {
+  if (!article || !article.content) return true;
+  const text = normalizeInlineText(article.textContent || '');
+  return text.length < 280;
+}
+
 function getImageSource(img) {
   return (
     img.getAttribute('src') ||
@@ -306,6 +555,19 @@ function getArticle(docClone) {
 }
 
 function getFullPageArticle(docClone) {
+  // Substack fast-path: Extract directly from their specific content wrapper
+  if (window.location.hostname.includes('substack.com')) {
+    const substackContainer = docClone.querySelector('.body.markup, .available-content, [data-testid="post-body"]');
+    if (substackContainer) {
+      return {
+        title: document.title,
+        content: substackContainer.innerHTML,
+        textContent: substackContainer.textContent || '',
+        excerpt: ''
+      };
+    }
+  }
+
   // Try readability first to keep main article quality high on blog/news pages.
   const readable = getArticle(docClone);
   if (readable?.content) return readable;
@@ -472,104 +734,16 @@ tags: [read-later, web-clip]
     result.text = postProcessText(mdOutput);
 
   } else if (format === 'structured') {
+    const pageUrl = window.location.href;
     const transcriptRoot = document.createElement('div');
     transcriptRoot.innerHTML = content;
-
-    const pageUrl = window.location.href;
-    const hostName = window.location.hostname.replace(/^www\./, '');
     const youtubeVideoId = extractYouTubeVideoId(pageUrl, transcriptRoot);
     const chapters = collectTranscriptChapters(transcriptRoot);
+    const transcriptMode = isTranscriptLike(transcriptRoot, title, pageUrl, chapters, youtubeVideoId);
 
-    let output = `# Transcript for ${title}\n\n`;
-    output += `This is a transcript extracted from ${hostName}. Timestamps are clickable when a YouTube source is available. Please note this transcript is automatically generated and may contain errors.\n\n`;
-    output += 'Here are some useful links:\n\n';
-    output += `- Go back to [this page](${pageUrl})\n`;
-    if (youtubeVideoId) {
-      output += `- Watch the [full YouTube version](https://youtube.com/watch?v=${youtubeVideoId})\n`;
-    } else if (references.links[0]?.url) {
-      output += `- Open a [related source link](${references.links[0].url})\n`;
-    }
-
-    if (chapters.length > 0) {
-      output += '\n## Table of Contents\n\n';
-      output += 'Here are the loose chapters in the conversation:\n\n';
-
-      chapters.forEach(chapter => {
-        const label = chapter.label || chapter.rawText;
-        let timeLabel = '';
-        let chapterLink = `#${chapter.anchor}`;
-
-        if (typeof chapter.seconds === 'number') {
-          timeLabel = formatTimestampForDisplay(chapter.seconds);
-          if (youtubeVideoId) {
-            chapterLink = `https://youtube.com/watch?v=${youtubeVideoId}&t=${chapter.seconds}`;
-          }
-        }
-
-        const lineLabel = timeLabel ? `${timeLabel} - ${label}` : label;
-        output += `- [${lineLabel}](${chapterLink})\n`;
-      });
-    }
-
-    if (youtubeVideoId) {
-      output += `\n<iframe width="700" height="394" src="https://www.youtube.com/embed/${youtubeVideoId}" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen="" style="margin: 0px 0px 1.71429rem; padding: 0px; border: 0px; font-size: 16px; vertical-align: baseline; max-width: 100%;"></iframe>\n`;
-    }
-
-    const chapterByHeading = new Map();
-    chapters.forEach(chapter => {
-      chapterByHeading.set(chapter.rawText, chapter);
-    });
-
-    const transcriptBlocks = [];
-    const contentNodes = transcriptRoot.querySelectorAll('h1, h2, h3, p, li, blockquote');
-    contentNodes.forEach(node => {
-      const text = normalizeInlineText(node.textContent);
-      if (!text) return;
-
-      if (/^H[1-3]$/.test(node.tagName)) {
-        const chapter = chapterByHeading.get(text);
-        if (chapter) {
-          transcriptBlocks.push(`<a id="${chapter.anchor}"></a>`);
-          transcriptBlocks.push(`## ${chapter.label || chapter.rawText}`);
-          transcriptBlocks.push('');
-          return;
-        }
-        transcriptBlocks.push(`## ${text}`);
-        transcriptBlocks.push('');
-        return;
-      }
-
-      const speakerMatch = text.match(/^([A-Za-z][A-Za-z0-9 .'\-]{1,80}?)\s*[\(\[](\d{1,2}:\d{2}(?::\d{2})?)[\)\]]\s*[:\-–—]?\s*(.+)$/);
-      if (speakerMatch) {
-        const speaker = normalizeInlineText(speakerMatch[1]);
-        const rawTimestamp = speakerMatch[2];
-        const body = normalizeInlineText(speakerMatch[3]);
-        const seconds = parseTimestampToSeconds(rawTimestamp);
-        const timestampDisplay = typeof seconds === 'number'
-          ? formatTimestampForDisplay(seconds, true)
-          : rawTimestamp;
-
-        if (youtubeVideoId && typeof seconds === 'number') {
-          transcriptBlocks.push(`**${speaker}**[(${timestampDisplay})](https://youtube.com/watch?v=${youtubeVideoId}&t=${seconds}) ${body}`);
-        } else {
-          transcriptBlocks.push(`**${speaker}** (${timestampDisplay}) ${body}`);
-        }
-      } else {
-        transcriptBlocks.push(text);
-      }
-
-      transcriptBlocks.push('');
-    });
-
-    output += '\n' + transcriptBlocks.join('\n').trim();
-
-    if (references.links.length > 0 && options.includeLinks !== false) {
-      output += '\n\n## Referenced Links\n\n';
-      references.links.slice(0, 15).forEach(link => {
-        output += `- [${link.text}](${link.url})\n`;
-      });
-    }
-
+    const output = transcriptMode
+      ? createStructuredTranscriptOutput({ content, title, pageUrl, references, options })
+      : createStructuredArticleOutput({ content, title, pageUrl, article, options });
     result.text = postProcessText(output);
 
   } else {
@@ -680,6 +854,20 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
             content: document.body.innerHTML,
             textContent: document.body.innerText
           };
+        }
+
+        // Readability can fail on modern JS-heavy pages; fallback to full-page semantic extraction.
+        if (isArticleWeak(article)) {
+          const fullFallback = getFullPageArticle(docClone);
+          if (fullFallback && !isArticleWeak(fullFallback)) {
+            article = fullFallback;
+          } else {
+            article = {
+              title: document.title,
+              content: document.body.innerHTML,
+              textContent: document.body.innerText
+            };
+          }
         }
 
         const formatted = convertToFormat(article, request.format, request.options);
