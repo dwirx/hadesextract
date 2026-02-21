@@ -42,12 +42,14 @@
     .header-title {
       min-width: 140px;
     }
+
     .view-nav-btn-active {
       background: #fff;
       color: #334155;
       font-weight: 700;
       box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
     }
+
     .ai-chat-msg {
       border: 1px solid #e2e8f0;
       border-radius: 10px;
@@ -57,31 +59,54 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
+
     .ai-chat-msg.user {
-      background: #eef2ff;
-      border-color: #c7d2fe;
+      background: #4f46e5;
+      color: #ffffff;
+      border-color: #4f46e5;
+      border-bottom-right-radius: 2px;
     }
+
     .ai-chat-msg.assistant {
       background: #ffffff;
       border-color: #e2e8f0;
+      color: #1e293b;
+      border-bottom-left-radius: 2px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
     }
+
     .ai-chat-row {
       display: flex;
       flex-direction: column;
-      gap: 6px;
+      gap: 4px;
+      max-width: 85%;
     }
+
+    .ai-chat-row.user-row {
+      align-self: flex-end;
+      align-items: flex-end;
+    }
+
+    .ai-chat-row.assistant-row {
+      align-self: flex-start;
+      align-items: flex-start;
+    }
+
     .ai-chat-role {
       font-size: 10px;
       text-transform: uppercase;
       letter-spacing: .04em;
-      color: #64748b;
+      color: #94a3b8;
       font-weight: 700;
+      margin: 0 4px;
     }
+
     .chat-tools {
       display: flex;
       gap: 8px;
       align-items: center;
     }
+
     .chat-progress {
       height: 6px;
       border-radius: 999px;
@@ -89,31 +114,93 @@
       overflow: hidden;
       margin-top: 8px;
     }
+
     .chat-progress-fill {
       height: 100%;
       width: 0%;
       background: linear-gradient(90deg, #6366f1, #8b5cf6);
       transition: width .2s ease;
     }
+
     .chat-status {
       font-size: 11px;
       color: #64748b;
       margin-top: 6px;
     }
+
     .copy-msg-btn {
-      margin-left: auto;
       border: 1px solid #e2e8f0;
       background: #fff;
-      color: #475569;
+      color: #64748b;
       font-size: 10px;
       font-weight: 600;
       border-radius: 6px;
-      padding: 4px 8px;
+      padding: 3px 8px;
       cursor: pointer;
+      opacity: 0;
+      transition: all 0.2s;
+      align-self: flex-start;
+      margin-top: 4px;
     }
+
+    .ai-chat-row:hover .copy-msg-btn {
+      opacity: 1;
+    }
+
     .copy-msg-btn:hover {
       background: #f8fafc;
       border-color: #cbd5e1;
+      color: #334155;
+    }
+
+    /* Typing Indicator inside Chat */
+    .typing-indicator {
+      display: flex;
+      gap: 4px;
+      padding: 12px 14px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      border-bottom-left-radius: 2px;
+      align-self: flex-start;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      margin-top: 4px;
+    }
+
+    .typing-dot {
+      width: 5px;
+      height: 5px;
+      background: #94a3b8;
+      border-radius: 50%;
+      animation: typing 1.4s infinite ease-in-out;
+    }
+
+    .typing-dot:nth-child(1) {
+      animation-delay: 0s;
+    }
+
+    .typing-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+
+    .typing-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes typing {
+
+      0%,
+      80%,
+      100% {
+        transform: translateY(0);
+        opacity: 0.5;
+      }
+
+      40% {
+        transform: translateY(-4px);
+        opacity: 1;
+        background: #6366f1;
+      }
     }
 
     .is-popout,
@@ -354,12 +441,17 @@
         <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">AI</span>
         <button id="aiSummarizeBtn"
           class="px-2.5 py-1.5 rounded-md bg-indigo-600 text-white text-[10px] font-bold hover:bg-indigo-700 transition-colors flex items-center gap-1">
-          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h12M3 18h8"/></svg>
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 6h18M3 12h12M3 18h8" />
+          </svg>
           Ringkas
         </button>
         <button id="aiExplainBtn"
           class="px-2.5 py-1.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold hover:bg-slate-200 transition-colors flex items-center gap-1">
-          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v.01M12 8a2 2 0 0 1 2 2c0 1.2-2 1.8-2 3"/></svg>
+          <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 16v.01M12 8a2 2 0 0 1 2 2c0 1.2-2 1.8-2 3" />
+          </svg>
           Jelaskan
         </button>
         <input id="aiExplainFocus" type="text"
@@ -437,8 +529,11 @@
         </div>
         <div id="resultModeBar" class="px-3 py-2 border-b border-slate-100 hidden items-center gap-2 bg-slate-50">
           <span class="text-[10px] font-bold text-slate-400 uppercase">View</span>
-          <button id="showOriginalBtn" class="px-2 py-1 rounded text-[10px] font-semibold text-slate-700 bg-white border border-slate-200">Original</button>
-          <button id="showAiBtn" class="px-2 py-1 rounded text-[10px] font-semibold text-slate-500 border border-transparent">AI Result</button>
+          <button id="showOriginalBtn"
+            class="px-2 py-1 rounded text-[10px] font-semibold text-slate-700 bg-white border border-slate-200">Original</button>
+          <button id="showAiBtn"
+            class="px-2 py-1 rounded text-[10px] font-semibold text-slate-500 border border-transparent">AI
+            Result</button>
         </div>
 
         <div id="resultDisplay" contenteditable="true" spellcheck="false"
@@ -451,26 +546,76 @@
     <!-- AI Chat View -->
     <section id="chatSection" class="flex-1 flex flex-col min-h-0 hidden">
       <div class="flex items-center gap-2 mb-2">
-        <select id="chatSessionSelect" class="flex-1 px-2 py-1.5 rounded-md border border-slate-200 text-[11px] text-slate-700 bg-white">
+        <select id="chatSessionSelect"
+          class="flex-1 px-2 py-1.5 rounded-md border border-slate-200 text-[11px] text-slate-700 bg-white">
           <option value="">New chat session</option>
         </select>
-        <button id="copyChatBtn" class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200">Copy Chat</button>
-        <button id="newChatBtn" class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200">New</button>
-        <button id="deleteChatBtn" class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-red-600 bg-red-50 hover:bg-red-100">Delete</button>
+        <button id="copyChatBtn"
+          class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors">Copy</button>
+        <button id="exportChatBtn"
+          class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors"
+          title="Export as Markdown">Export</button>
+        <button id="newChatBtn"
+          class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors">New</button>
+        <button id="deleteChatBtn"
+          class="px-2.5 py-1.5 rounded-md text-[10px] font-semibold text-red-600 bg-red-50 hover:bg-red-100 transition-colors">Delete</button>
       </div>
-      <div class="flex items-center gap-2 mb-2 text-[10px] text-slate-500">
-        <span id="chatContextLabel" class="px-2 py-1 bg-indigo-50 text-indigo-700 rounded-md">Context: no extracted text</span>
-      </div>
-      <div id="chatMessages" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2 p-2 border border-slate-200 rounded-xl bg-white"></div>
-      <div id="chatThinkingWrap" class="hidden">
-        <div class="chat-progress">
-          <div id="chatProgressFill" class="chat-progress-fill"></div>
+      <div class="flex items-center justify-between mb-2">
+        <div class="flex items-center gap-2 text-[10px] text-slate-500">
+          <span id="chatContextLabel" class="px-2 py-1 bg-indigo-50 text-indigo-700 rounded-md font-medium">Context: no
+            extracted text</span>
         </div>
-        <div id="chatStatusText" class="chat-status">AI thinking...</div>
+        <label class="flex items-center gap-1.5 cursor-pointer group">
+          <span
+            class="text-[10px] font-medium text-slate-500 group-hover:text-slate-700 transition-colors select-none">Referensi
+            Konteks</span>
+          <div class="relative w-7 h-4">
+            <input type="checkbox" id="includeContextToggle" checked class="peer sr-only">
+            <div
+              class="w-full h-full bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-500 transition-colors">
+            </div>
+          </div>
+        </label>
       </div>
-      <div class="mt-2 flex items-center gap-2">
-        <input id="chatInput" type="text" class="flex-1 px-3 py-2 rounded-md border border-slate-200 text-[12px]" placeholder="Tanya tentang teks ini...">
-        <button id="sendChatBtn" class="px-3 py-2 rounded-md bg-indigo-600 text-white text-[11px] font-semibold hover:bg-indigo-700">Send</button>
+      <div id="chatMessages"
+        class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-4 p-4 border border-slate-200 rounded-xl bg-slate-50/50 shadow-inner">
+      </div>
+
+      <!-- New Typing Indicator container -->
+      <div id="chatThinkingWrap" class="hidden">
+        <div class="typing-indicator ml-4 mb-2">
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+        </div>
+      </div>
+
+      <!-- Quick Prompts Widget -->
+      <div id="quickPromptsContainer" class="mt-2 flex overflow-x-auto gap-2 pb-1 custom-scrollbar">
+        <button
+          class="quick-prompt-btn whitespace-nowrap px-2.5 py-1 bg-white border border-slate-200 rounded-full text-[10px] text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors">📝
+          Buatkan ringkasan poin inti</button>
+        <button
+          class="quick-prompt-btn whitespace-nowrap px-2.5 py-1 bg-white border border-slate-200 rounded-full text-[10px] text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors">👶
+          Jelaskan pakai bahasa sederhana</button>
+        <button
+          class="quick-prompt-btn whitespace-nowrap px-2.5 py-1 bg-white border border-slate-200 rounded-full text-[10px] text-slate-600 hover:bg-slate-50 hover:border-slate-300 transition-colors">🇮🇩
+          Terjemahkan ke B. Indonesia</button>
+      </div>
+
+      <div
+        class="mt-1 flex items-center gap-2 bg-white p-2 rounded-xl border border-slate-200 shadow-sm focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-400 transition-all">
+        <input id="chatInput" type="text"
+          class="flex-1 px-3 py-2 bg-transparent border-none text-[13px] text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-0"
+          placeholder="Tanya tentang teks ini...">
+        <button id="sendChatBtn"
+          class="px-4 py-2.5 rounded-lg bg-indigo-600 text-white text-[12px] font-semibold hover:bg-indigo-700 hover:shadow disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5">
+          Send
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
       </div>
     </section>
 

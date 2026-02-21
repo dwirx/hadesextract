@@ -56,6 +56,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const newChatBtn = document.getElementById('newChatBtn');
   const copyChatBtn = document.getElementById('copyChatBtn');
   const deleteChatBtn = document.getElementById('deleteChatBtn');
+  const exportChatBtn = document.getElementById('exportChatBtn');
+  const includeContextToggle = document.getElementById('includeContextToggle');
+  const quickPromptBtns = document.querySelectorAll('.quick-prompt-btn');
+
   const chatContextLabel = document.getElementById('chatContextLabel');
   const chatMessages = document.getElementById('chatMessages');
   const chatThinkingWrap = document.getElementById('chatThinkingWrap');
@@ -117,19 +121,19 @@ document.addEventListener('DOMContentLoaded', () => {
       // If it came from storage (e.g. context menu) and NOT history,
       // save it to history so it persists
       if (source === 'storage') {
-         const historyItems = await db.getAll();
-         const mostRecent = historyItems[0];
-         // Basic duplicate check
-         const isDuplicate = mostRecent && mostRecent.url === candidate.url && mostRecent.text === candidate.text;
+        const historyItems = await db.getAll();
+        const mostRecent = historyItems[0];
+        // Basic duplicate check
+        const isDuplicate = mostRecent && mostRecent.url === candidate.url && mostRecent.text === candidate.text;
 
-         if (!isDuplicate) {
-             db.add({
-              title: candidate.title,
-              text: candidate.text,
-              url: candidate.url || '',
-              format: 'txt'
-            }).catch(console.error);
-         }
+        if (!isDuplicate) {
+          db.add({
+            title: candidate.title,
+            text: candidate.text,
+            url: candidate.url || '',
+            format: 'txt'
+          }).catch(console.error);
+        }
       }
     }
     loadChatSessions();
@@ -203,6 +207,21 @@ document.addEventListener('DOMContentLoaded', () => {
   newChatBtn.addEventListener('click', () => createChatSession());
   copyChatBtn.addEventListener('click', copyCurrentChatSession);
   deleteChatBtn.addEventListener('click', () => deleteActiveChatSession());
+  if (exportChatBtn) exportChatBtn.addEventListener('click', exportChatSession);
+
+  if (quickPromptBtns) {
+    quickPromptBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        // Strip the emoji from the beginning of the button text for the prompt
+        let promptText = btn.textContent.trim();
+        // Remove simple emojis (1-2 chars at start usually)
+        promptText = promptText.replace(/^[^\w\s]+\s*/, '');
+        chatInput.value = promptText;
+        sendChatMessage();
+      });
+    });
+  }
+
   chatSessionSelect.addEventListener('change', () => {
     activeChatSessionId = chatSessionSelect.value || null;
     renderChatMessages();
@@ -332,73 +351,92 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function updateChatContextLabel() {
-    const hasContext = Boolean(currentData?.originalText || currentData?.text);
+    const session = getActiveChatSession();
+    const source = (session && session.source?.originalText) ? session.source : currentData;
+    const hasContext = Boolean(source?.originalText || source?.text);
     if (hasContext) {
-      chatContextLabel.textContent = `Context: ${currentData.title || 'Extracted text'} (${(currentData.originalText || currentData.text || '').length.toLocaleString()} chars)`;
+      chatContextLabel.textContent = `Context: ${source.title || 'Extracted text'} (${(source.originalText || source.text || '').length.toLocaleString()} chars)`;
     } else {
       chatContextLabel.textContent = 'Context: no extracted text';
     }
+  }
+
+  function parseMarkdownToHTML(text) {
+    if (!text) return '';
+    let html = text.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Bold
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // Italic
+    html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+    // Inline code
+    html = html.replace(/`(.*?)`/g, '<code class="bg-slate-100 text-pink-600 px-1 py-0.5 rounded text-[11px] font-mono">$1</code>');
+    // Lists
+    html = html.replace(/^- (.*)/gm, '<li class="ml-4 list-disc">$1</li>');
+    return html;
   }
 
   function renderChatMessages() {
     chatMessages.innerHTML = '';
     const session = getActiveChatSession();
     if (!session || !session.messages.length) {
-      chatMessages.innerHTML = '<div class="text-[11px] text-slate-400 p-2">Belum ada chat. Tulis pertanyaan lalu klik Send.</div>';
+      chatMessages.innerHTML = '<div class="text-[11px] text-slate-400 p-2 text-center mt-4">Belum ada obrolan. Tulis pertanyaan di bawah ini 👇</div>';
       return;
     }
     session.messages.forEach(message => {
+      const isUser = message.role !== 'assistant';
       const row = document.createElement('div');
-      row.className = 'ai-chat-row';
+      row.className = `ai-chat-row ${isUser ? 'user-row' : 'assistant-row'}`;
 
       const role = document.createElement('div');
       role.className = 'ai-chat-role';
-      role.textContent = message.role === 'assistant' ? 'AI' : 'You';
+      role.textContent = isUser ? 'You' : 'AI';
 
       const bubble = document.createElement('div');
-      bubble.className = `ai-chat-msg ${message.role}`;
-      bubble.textContent = message.content;
+      bubble.className = `ai-chat-msg ${isUser ? 'user' : 'assistant'}`;
+
+      if (isUser) {
+        bubble.textContent = message.content;
+      } else {
+        bubble.innerHTML = parseMarkdownToHTML(message.content);
+      }
 
       row.appendChild(role);
-      if (message.role === 'assistant') {
+      row.appendChild(bubble);
+
+      if (!isUser) {
+        const btnBox = document.createElement('div');
         const copyBtn = document.createElement('button');
         copyBtn.type = 'button';
         copyBtn.className = 'copy-msg-btn';
         copyBtn.textContent = 'Copy';
         copyBtn.addEventListener('click', () => copyText(message.content));
-        row.appendChild(copyBtn);
+        btnBox.appendChild(copyBtn);
+        row.appendChild(btnBox);
       }
-      row.appendChild(bubble);
       chatMessages.appendChild(row);
     });
-    chatMessages.scrollTop = chatMessages.scrollHeight;
+
+    // Smooth scroll to bottom
+    setTimeout(() => {
+      const lastElement = chatMessages.lastElementChild;
+      if (lastElement) {
+        lastElement.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      } else {
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+    }, 50);
   }
 
-  function startChatThinking(status = 'AI thinking...') {
-    let progress = 6;
+  function startChatThinking() {
     if (chatThinkingWrap) chatThinkingWrap.classList.remove('hidden');
-    if (chatProgressFill) chatProgressFill.style.width = `${progress}%`;
-    if (chatStatusText) chatStatusText.textContent = status;
-
-    const timer = setInterval(() => {
-      if (progress >= 92) return;
-      progress += Math.floor(Math.random() * 6) + 1;
-      if (progress > 92) progress = 92;
-      if (chatProgressFill) chatProgressFill.style.width = `${progress}%`;
-    }, 220);
+    // scroll bottom again to show typing indicator
+    setTimeout(() => {
+      chatThinkingWrap.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 50);
 
     return {
-      update(nextStatus) {
-        if (chatStatusText && nextStatus) chatStatusText.textContent = nextStatus;
-      },
-      done(nextStatus = 'Done') {
-        clearInterval(timer);
-        if (chatProgressFill) chatProgressFill.style.width = '100%';
-        if (chatStatusText) chatStatusText.textContent = nextStatus;
-        setTimeout(() => {
-          if (chatThinkingWrap) chatThinkingWrap.classList.add('hidden');
-          if (chatProgressFill) chatProgressFill.style.width = '0%';
-        }, 450);
+      done() {
+        if (chatThinkingWrap) chatThinkingWrap.classList.add('hidden');
       }
     };
   }
@@ -846,7 +884,14 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
   }
 
-  async function callOpenRouter({ apiKey, model, messages }) {
+  async function callOpenRouter({ apiKey, model, messages, onChunk }) {
+    const payload = {
+      model,
+      messages,
+      temperature: 0.3,
+      stream: typeof onChunk === 'function'
+    };
+
     const response = await fetch(OPENROUTER_API_URL, {
       method: 'POST',
       headers: {
@@ -855,25 +900,56 @@ document.addEventListener('DOMContentLoaded', () => {
         'HTTP-Referer': 'chrome-extension://text-extractor-pro',
         'X-Title': 'Text Extractor Pro'
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: 0.3
-      })
+      body: JSON.stringify(payload)
     });
 
-    const data = await response.json().catch(() => ({}));
     if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
       const message = data?.error?.message || `OpenRouter error (${response.status})`;
       throw new Error(message);
     }
 
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content || typeof content !== 'string') {
-      throw new Error('No AI response content returned');
+    if (!payload.stream) {
+      const data = await response.json();
+      const content = data?.choices?.[0]?.message?.content;
+      if (!content || typeof content !== 'string') {
+        throw new Error('No AI response content returned');
+      }
+      return content.trim();
     }
 
-    return content.trim();
+    // Streaming Logic
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let fullContent = '';
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop(); // keep the last incomplete chunk in buffer
+
+      for (const line of lines) {
+        if (line.startsWith('data: ') && line !== 'data: [DONE]') {
+          const dataStr = line.replace('data: ', '').trim();
+          if (!dataStr) continue;
+          try {
+            const parsed = JSON.parse(dataStr);
+            const chunkContent = parsed.choices[0]?.delta?.content;
+            if (chunkContent) {
+              fullContent += chunkContent;
+              onChunk(fullContent);
+            }
+          } catch (e) {
+            console.warn('Could not parse streaming chunk', line);
+          }
+        }
+      }
+    }
+    return fullContent.trim();
   }
 
   async function runAiAction(actionType) {
@@ -936,15 +1012,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const question = (chatInput.value || '').trim();
     if (!question) return;
 
-    const thinking = startChatThinking('Analyzing context...');
+    chatInput.disabled = true;
+    sendChatBtn.disabled = true;
+    const thinking = startChatThinking();
     try {
-      sendChatBtn.disabled = true;
       const settings = await getMergedSettings();
       const apiKey = (settings.openrouterApiKey || '').trim();
       const model = (settings.openrouterModel || 'openai/gpt-5-nano').trim();
 
       if (!apiKey) {
         showStatus('Set OpenRouter API key in Options first.', 'text-red-600 bg-red-50');
+        chatInput.disabled = false;
+        sendChatBtn.disabled = false;
+        thinking.done();
         return;
       }
 
@@ -954,14 +1034,34 @@ document.addEventListener('DOMContentLoaded', () => {
         session = getActiveChatSession();
       }
 
-      const contextText = truncateInput(currentData?.originalText || currentData?.text || '', 14000);
-      const contextAi = truncateInput(currentData?.aiText || '', 6000);
-      const contextLines = [
-        currentData?.title ? `Judul: ${currentData.title}` : '',
-        currentData?.url ? `URL: ${currentData.url}` : '',
-        contextText ? `Teks original:\n${contextText}` : 'Teks original: tidak tersedia',
-        contextAi ? `Hasil AI terakhir:\n${contextAi}` : ''
-      ].filter(Boolean).join('\n\n');
+      // If we have active extracted data, bind it to this session if it doesn't have one
+      if (currentData && (currentData.originalText || currentData.text) && !session.source?.originalText) {
+        session.source = {
+          title: currentData.title || '',
+          url: currentData.url || '',
+          originalText: currentData.originalText || currentData.text || '',
+          aiText: currentData.aiText || ''
+        };
+      }
+
+      let contextLines = '';
+      if (includeContextToggle && includeContextToggle.checked) {
+        const sourceOriginal = session.source?.originalText || currentData?.originalText || currentData?.text || '';
+        const sourceAi = session.source?.aiText || currentData?.aiText || '';
+        const sourceTitle = session.source?.title || currentData?.title || '';
+        const sourceUrl = session.source?.url || currentData?.url || '';
+
+        if (sourceOriginal) {
+          const contextText = truncateInput(sourceOriginal, 14000);
+          const contextAi = truncateInput(sourceAi, 6000);
+          contextLines = [
+            sourceTitle ? `Judul: ${sourceTitle}` : '',
+            sourceUrl ? `URL: ${sourceUrl}` : '',
+            `Teks original:\n${contextText}`,
+            contextAi ? `Hasil AI terakhir:\n${contextAi}` : ''
+          ].filter(Boolean).join('\n\n');
+        }
+      }
 
       session.messages.push({ role: 'user', content: question, ts: new Date().toISOString() });
       renderChatMessages();
@@ -971,18 +1071,35 @@ document.addEventListener('DOMContentLoaded', () => {
       const messages = [
         {
           role: 'system',
-          content: 'Kamu adalah asisten diskusi teks. Jawab dalam Bahasa Indonesia, ringkas, akurat, dan selalu berbasis konteks yang diberikan.'
-        },
-        {
+          content: 'Kamu adalah asisten diskusi teks. Jawab dalam Bahasa Indonesia, ringkas, akurat, dan selalu berbasis konteks yang diberikan. Output wajib dalam format markdown.'
+        }
+      ];
+
+      if (contextLines) {
+        messages.push({
           role: 'user',
           content: `Konteks dokumen:\n${contextLines}`
-        },
-        ...chatHistory
-      ];
-      thinking.update('Generating answer...');
+        });
+      }
 
-      const answer = await callOpenRouter({ apiKey, model, messages });
-      session.messages.push({ role: 'assistant', content: answer, ts: new Date().toISOString() });
+      messages.push(...chatHistory);
+
+      // Prepare empty message for streaming
+      const assistantMessageIndex = session.messages.length;
+      session.messages.push({ role: 'assistant', content: '', ts: new Date().toISOString() });
+      renderChatMessages();
+
+      const answer = await callOpenRouter({
+        apiKey, model, messages,
+        onChunk: (partialText) => {
+          // update ongoing message and layout but hide thinking indicator manually
+          if (chatThinkingWrap) chatThinkingWrap.classList.add('hidden');
+          session.messages[assistantMessageIndex].content = partialText;
+          renderChatMessages();
+        }
+      });
+
+      session.messages[assistantMessageIndex].content = answer;
       session.updatedAt = new Date().toISOString();
       session.source = {
         title: currentData?.title || session.source?.title || '',
@@ -1006,13 +1123,21 @@ document.addEventListener('DOMContentLoaded', () => {
         messages: session.messages,
         session
       });
-      thinking.done('Answer ready');
+      thinking.done();
     } catch (error) {
       console.error('Chat failed:', error);
       showStatus(`AI chat error: ${error.message}`, 'text-red-600 bg-red-50');
-      thinking.done('Failed');
+      // remove the partial/empty message on failure if that's the last one
+      const session = getActiveChatSession();
+      if (session && session.messages.length > 0 && session.messages[session.messages.length - 1].role === 'assistant') {
+        session.messages.pop();
+        renderChatMessages();
+      }
+      thinking.done();
     } finally {
+      chatInput.disabled = false;
       sendChatBtn.disabled = false;
+      setTimeout(() => chatInput.focus(), 100);
     }
   }
 
@@ -1073,6 +1198,43 @@ document.addEventListener('DOMContentLoaded', () => {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function exportChatSession() {
+    const session = getActiveChatSession();
+    if (!session || !session.messages.length) {
+      showStatus('No chat history to export.', 'text-amber-600 bg-amber-50');
+      return;
+    }
+
+    let md = `# AI Chat Session\n`;
+    md += `Date: ${new Date().toLocaleString()}\n`;
+    if (session.source?.title) {
+      md += `Original Context: ${session.source.title}\n`;
+    }
+    if (session.source?.url) {
+      md += `Source URL: ${session.source.url}\n`;
+    }
+    md += `\n---\n\n`;
+
+    session.messages.forEach(msg => {
+      const roleLabel = msg.role === 'assistant' ? '🤖 **AI**' : '👤 **You**';
+      md += `${roleLabel}:\n\n${msg.content}\n\n---\n\n`;
+    });
+
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `AI_Chat_Export_${timestamp}.md`;
+
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    showStatus('Chat exported successfully!', 'text-emerald-600 bg-emerald-50');
+    setTimeout(() => statusEl.classList.add('hidden'), 2000);
   }
 
   // Listen for messages from content script

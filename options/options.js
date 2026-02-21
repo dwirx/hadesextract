@@ -61,8 +61,8 @@ async function loadSettings() {
   try {
     const result = await chrome.storage.local.get('settings');
     const localSettings = readSettingsFromLocalStorage();
-    const settings = { ...DEFAULT_SETTINGS, ...(result.settings || {}), ...localSettings };
-    
+    const settings = { ...DEFAULT_SETTINGS, ...localSettings, ...(result.settings || {}) };
+
     // Apply settings to UI
     elements.themeSelect.value = settings.theme;
     elements.preserveStructure.checked = settings.preserveStructure;
@@ -80,7 +80,7 @@ async function loadSettings() {
     elements.modelSearch.value = '';
     updateStorageBadge(settings);
     updateSelectedModelInfo(settings.openrouterModel);
-    
+
     // Apply theme
     applyTheme(settings.theme);
     await refreshModelList();
@@ -110,14 +110,14 @@ async function saveSettings() {
       modelSort: elements.modelSort.value,
       modelPriceFilter: elements.modelPriceFilter.value
     };
-    
+
     await chrome.storage.local.set({ settings });
     writeSettingsToLocalStorage(settings);
-    
+
     // Apply theme
     applyTheme(settings.theme);
     updateStorageBadge(settings);
-    
+
     showStatus('Settings saved successfully!', 'success');
   } catch (error) {
     console.error('Failed to save settings:', error);
@@ -132,7 +132,7 @@ async function resetSettings() {
   if (!confirm('Are you sure you want to reset all settings to defaults?')) {
     return;
   }
-  
+
   try {
     await chrome.storage.local.set({ settings: DEFAULT_SETTINGS });
     clearLocalSettings();
@@ -152,7 +152,7 @@ async function resetSettings() {
 function showStatus(message, type = 'success') {
   elements.statusMessage.textContent = message;
   elements.statusMessage.className = `status-message ${type} show`;
-  
+
   setTimeout(() => {
     elements.statusMessage.classList.remove('show');
   }, 3000);
@@ -413,7 +413,10 @@ async function refreshModelList() {
 
   try {
     const apiKey = (elements.openrouterApiKey.value || '').trim();
-    const headers = {};
+    const headers = {
+      'HTTP-Referer': 'https://github.com/TextExtractorPro', // Optional but recommended by OpenRouter
+      'X-Title': 'Text Extractor Pro Extension'
+    };
     if (apiKey) {
       headers.Authorization = `Bearer ${apiKey}`;
     }
@@ -459,12 +462,14 @@ async function testApiConnection() {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://github.com/TextExtractorPro',
+        'X-Title': 'Text Extractor Pro Extension'
       },
       body: JSON.stringify({
         model,
         messages: [{ role: 'user', content: 'Ping' }],
-        max_tokens: 5
+        max_tokens: 15
       })
     });
 
@@ -474,7 +479,8 @@ async function testApiConnection() {
       throw new Error(msg);
     }
 
-    showStatus('Koneksi API berhasil.', 'success');
+    const aiMessage = payload?.choices?.[0]?.message?.content || 'Sukses';
+    showStatus(`Koneksi API berhasil! AI membalas: ${aiMessage}`, 'success');
   } catch (error) {
     console.error('API test failed:', error);
     showStatus(`API error: ${error.message}`, 'error');
@@ -490,37 +496,19 @@ async function testApiConnection() {
  */
 function applyTheme(theme) {
   const root = document.documentElement;
-  
+
   // Determine effective theme
   let effectiveTheme = theme;
   if (theme === 'auto') {
     effectiveTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
-  
+
   // Remove existing theme classes
   root.classList.remove('theme-light', 'theme-dark');
   root.classList.add(`theme-${effectiveTheme}`);
-  
+
   // Apply theme variables
-  if (effectiveTheme === 'dark') {
-    root.style.setProperty('--primary', '#818cf8');
-    root.style.setProperty('--primary-dark', '#6366f1');
-    root.style.setProperty('--success', '#34d399');
-    root.style.setProperty('--bg-primary', '#0f172a');
-    root.style.setProperty('--bg-secondary', '#1e293b');
-    root.style.setProperty('--text-primary', '#f1f5f9');
-    root.style.setProperty('--text-secondary', '#cbd5e1');
-    root.style.setProperty('--border', '#334155');
-  } else {
-    root.style.setProperty('--primary', '#6366f1');
-    root.style.setProperty('--primary-dark', '#4f46e5');
-    root.style.setProperty('--success', '#10b981');
-    root.style.setProperty('--bg-primary', '#ffffff');
-    root.style.setProperty('--bg-secondary', '#f8fafc');
-    root.style.setProperty('--text-primary', '#1e293b');
-    root.style.setProperty('--text-secondary', '#64748b');
-    root.style.setProperty('--border', '#e2e8f0');
-  }
+  // Handled by CSS vars in the options.html style block for .theme-dark
 }
 
 /**
@@ -529,7 +517,7 @@ function applyTheme(theme) {
 async function init() {
   // Load settings
   await loadSettings();
-  
+
   // Event listeners
   elements.saveBtn.addEventListener('click', saveSettings);
   elements.resetBtn.addEventListener('click', resetSettings);
@@ -547,12 +535,12 @@ async function init() {
       selectModel(elements.modelListSelect.value);
     }
   });
-  
+
   // Theme change listener
   elements.themeSelect.addEventListener('change', () => {
     applyTheme(elements.themeSelect.value);
   });
-  
+
   // Listen for system theme changes
   if (window.matchMedia) {
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -561,7 +549,7 @@ async function init() {
       }
     });
   }
-  
+
   // Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
     // Ctrl/Cmd + S to save
