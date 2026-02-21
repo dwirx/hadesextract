@@ -84,7 +84,16 @@ function cleanDOM(doc) {
     '[class*="sidebar" i]',
     '[class*="related" i]',
     '[class*="recommended" i]',
-    '[class*="comment" i]'
+    '[class*="comment" i]',
+    // Social media specific noise (Twitter, etc)
+    '[data-testid*="reply" i]',
+    '[data-testid*="retweet" i]',
+    '[data-testid*="like" i]',
+    '[data-testid*="bookmark" i]',
+    '[data-testid*="share" i]',
+    '[data-testid*="UserAvatar" i]',
+    '[data-testid="caret"]',
+    '[role="button"]'
   ];
 
   // Substack uses 'newsletter-post' for the main article wrapper, so we cannot blindly remove 'newsletter' classes.
@@ -401,13 +410,6 @@ function createStructuredTranscriptOutput({
     });
   }
 
-  if (pageUrls.length > 0 && options.includeLinks !== false) {
-    output += '\n\n## All Page URLs\n\n';
-    pageUrls.slice(0, 120).forEach(url => {
-      output += `- ${url}\n`;
-    });
-  }
-
   return output;
 }
 
@@ -459,13 +461,6 @@ function createStructuredArticleOutput({
   }
   output += `Source: [${pageUrl}](${pageUrl})\n\n`;
   output += `${markdownBody}\n`;
-
-  if (pageUrls.length > 0 && options.includeLinks !== false) {
-    output += '\n\n## All Page URLs\n\n';
-    pageUrls.slice(0, 120).forEach(url => {
-      output += `- ${url}\n`;
-    });
-  }
 
   return output;
 }
